@@ -10,4 +10,5 @@
 Working TTS endpoint tested under both online and offline conditions.
 
 ## Deviations
-(log any deviation from the prescribed stack here, with a one-line reason)
+- Python runtime: Running on Python 3.13.1 on host system.
+- Spoken Summary: Output strictly restricted to 1–3 words (e.g. "happy", "calm, but sounds forced") by default per PROMPT.md; multi-sentence descriptive narration moved behind optional flag `allow_long_narration=False`.

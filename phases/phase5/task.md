@@ -10,4 +10,5 @@
 Single working end-to-end endpoint tested with several sample clips, full latency breakdown logged.
 
 ## Deviations
-(log any deviation from the prescribed stack here, with a one-line reason)
+- Python runtime: Running on Python 3.13.1 on host system.
+- Pipeline input: Extended to accept separate image and audio files as an alternative convenience alongside video upload.

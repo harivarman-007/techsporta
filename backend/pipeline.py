@@ -193,11 +193,16 @@ def analyze_multimodal(
     # 6. Text-to-Speech Output
     audio_base64 = None
     tts_engine = None
-    spoken_phrase = fusion_dict.get("narration", "")
+    from tts import build_spoken_phrase, synthesize_speech
+    spoken_phrase = build_spoken_phrase(
+        label=fusion_dict.get("label", "neutral"),
+        mismatch=fusion_dict.get("mismatch", False),
+        mismatch_kind=fusion_dict.get("mismatch_kind", "none"),
+        narration=fusion_dict.get("narration", ""),
+    )
     if generate_tts and spoken_phrase:
         t0 = time.perf_counter()
         try:
-            from tts import synthesize_speech
             tts_bytes, mime_type, tts_engine = synthesize_speech(
                 spoken_phrase, force_offline=force_offline_tts
             )

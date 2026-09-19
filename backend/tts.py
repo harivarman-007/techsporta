@@ -26,41 +26,37 @@ def build_spoken_phrase(
     mismatch: bool = False,
     mismatch_kind: str = "none",
     narration: Optional[str] = None,
+    allow_long_narration: bool = False,
 ) -> str:
     """
-    Constructs a concise, screen-reader friendly spoken phrase.
-    If full narration is provided, uses it. Otherwise creates a crisp 1-2 clause phrase.
+    Constructs the 1-3 word emotional summary prescribed by PROMPT.md:
+    - If mismatch is False: 1-2 word label (e.g. "happy", "calm", "sad", "angry")
+    - If mismatch is True: label + "but sounds forced" or "but sounds off" (e.g. "calm, but sounds forced")
+    - Long multi-sentence narration is gated behind `allow_long_narration=True` (off by default).
     """
-    if narration and narration.strip():
-        # Keep it within 2 short sentences
+    if allow_long_narration and narration and narration.strip():
         sentences = [s.strip() for s in narration.strip().split(".") if s.strip()]
         return ". ".join(sentences[:2]) + "."
 
-    adj_map = {
-        "angry": "angry",
-        "disgust": "disgusted",
-        "fear": "fearful",
+    clean_label = label.lower().strip()
+    label_map = {
+        "neutral": "calm",
         "happy": "happy",
-        "neutral": "calm and neutral",
         "sad": "sad",
+        "angry": "angry",
+        "fear": "fearful",
         "surprise": "surprised",
+        "disgust": "disgusted",
+        "calm": "calm",
     }
-    mood = adj_map.get(label.lower(), label)
+    short_label = label_map.get(clean_label, clean_label)
 
     if mismatch:
-        if mismatch_kind == "masked_smile":
-            return f"Smiling, but tone sounds tense - possibly {mood}."
-        elif mismatch_kind == "sarcasm":
-            return f"Words sound positive, but delivery suggests sarcasm."
+        if mismatch_kind in ("sarcasm", "passive_aggressive"):
+            return f"{short_label}, but sounds off"
+        return f"{short_label}, but sounds forced"
 
-        elif mismatch_kind == "words_vs_tone":
-            return f"Words do not match tone; they seem {mood}."
-        elif mismatch_kind == "calm_urgent":
-            return "Sounding calm, but what they say seems urgent."
-        else:
-            return f"Conflicting signals; overall they seem {mood}."
-
-    return f"They seem {mood}."
+    return short_label
 
 
 def _synthesize_gtts(text: str) -> bytes:
@@ -125,16 +121,19 @@ def synthesize_speech(
 if __name__ == "__main__":
     print("Testing build_spoken_phrase():")
     print("  Congruent happy ->", repr(build_spoken_phrase("happy", False)))
-    print("  Masked smile ->", repr(build_spoken_phrase("fear", True, "masked_smile")))
-    print("  Sarcasm ->", repr(build_spoken_phrase("angry", True, "sarcasm")))
+    print("  Masked smile ->", repr(build_spoken_phrase("calm", True, "masked_smile")))
+    print("  Sarcasm ->", repr(build_spoken_phrase("happy", True, "sarcasm")))
+    assert build_spoken_phrase("happy", False) == "happy"
+    assert build_spoken_phrase("calm", True, "masked_smile") == "calm, but sounds forced"
+    assert build_spoken_phrase("happy", True, "sarcasm") == "happy, but sounds off"
 
     print("\nTesting online synthesis (gTTS):")
-    audio, mime, engine = synthesize_speech("They seem calm and neutral.", force_offline=False)
+    audio, mime, engine = synthesize_speech("calm", force_offline=False)
     print(f"  Result: {len(audio)} bytes, MIME: {mime}, Engine: {engine}")
     assert len(audio) > 1000 and mime == "audio/mpeg" and engine == "gTTS"
 
     print("\nTesting offline fallback synthesis (pyttsx3):")
-    audio_off, mime_off, engine_off = synthesize_speech("Smiling, but tone sounds tense.", force_offline=True)
+    audio_off, mime_off, engine_off = synthesize_speech("calm, but sounds forced", force_offline=True)
     print(f"  Result: {len(audio_off)} bytes, MIME: {mime_off}, Engine: {engine_off}")
     assert len(audio_off) > 1000 and mime_off == "audio/wav" and engine_off == "pyttsx3"
 

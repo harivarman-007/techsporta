@@ -11,4 +11,4 @@
 Working frontend, tested by manual interaction, confirmed via logs/network-tab output described in text — not screenshots.
 
 ## Deviations
-(log any deviation from the prescribed stack here, with a one-line reason)
+- Python runtime: Running on Python 3.13.1 on host system.

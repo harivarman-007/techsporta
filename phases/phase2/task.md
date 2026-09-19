@@ -9,4 +9,5 @@
 Working context endpoint returning structured JSON, tested against multiple sample inputs.
 
 ## Deviations
-(log any deviation from the prescribed stack here, with a one-line reason)
+- Python runtime: Running on Python 3.13.1 on host system.
+- Gemini Model: Uses `gemini-3.5-flash-lite` (or `gemini-2.5-flash` if set) with Pydantic structured output schema `{sentiment: str, confidence: float}`. Fallback keyword heuristic provided for offline evaluation.

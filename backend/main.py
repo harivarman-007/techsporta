@@ -77,18 +77,19 @@ def _grab_frame(camera_index: int = 0) -> bytes | None:
 @app.websocket("/stream")
 async def realtime_stream(websocket: WebSocket, camera: int = 0):
     """
-    Continuous real-time multimodal analysis over WebSocket.
-
-    Face thread  : captures webcam frame every FACE_INTERVAL_SEC, runs ViT.
-    Audio thread : listens to mic continuously via VAD.
-                   Whenever a complete utterance is detected (natural speech end),
-                   runs Wav2Vec2 + Whisper on it.
-
-    Both threads push updates independently — face results arrive fast (~500ms),
-    audio results arrive after each natural utterance ends.
-
-    Send "stop" to disconnect cleanly.
+    Continuous real-time multimodal analysis over WebSocket (Optional Extra).
+    Disabled by default per PROMPT.md scope lock.
+    Enable by setting environment variable ENABLE_STREAM_WS=1.
     """
+    if not os.getenv("ENABLE_STREAM_WS", "false").lower() in ("true", "1", "yes"):
+        await websocket.accept()
+        await websocket.send_text(json.dumps({
+            "type": "error",
+            "message": "/stream is an optional extra and is disabled by default per PROMPT.md scope lock. Set ENABLE_STREAM_WS=1 to enable."
+        }))
+        await websocket.close(code=1008, reason="/stream disabled by default per PROMPT.md. Set ENABLE_STREAM_WS=1 to enable.")
+        return
+
     await websocket.accept()
     logger.info("WS /stream connected")
 

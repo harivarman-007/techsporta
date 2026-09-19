@@ -38,27 +38,11 @@ except ImportError:
 class ContextAnalysis(BaseModel):
     sentiment: str = Field(
         ...,
-        description="Primary emotional sentiment: positive, negative, neutral, urgent, frustrated, anxious, happy, or sarcastic",
+        description="Primary emotional sentiment: positive, negative, neutral, urgent, or sarcastic",
     )
     confidence: float = Field(
         ..., ge=0.0, le=1.0,
         description="Confidence score between 0.0 and 1.0",
-    )
-    explanation: str = Field(
-        ...,
-        description="Short 1-sentence explanation of the linguistic/emotional cues detected in the transcript",
-    )
-    sarcasm_detected: bool = Field(
-        False,
-        description="True if the transcript implies sarcasm, irony, or passive-aggressive dissonance",
-    )
-    urgency: str = Field(
-        "low",
-        description="Urgency level: low, medium, or high",
-    )
-    sentiment_scores: Dict[str, float] = Field(
-        default_factory=dict,
-        description="Estimated probability distribution across key sentiments",
     )
 
 
@@ -132,41 +116,22 @@ class ContextAnalyzer:
         if is_sarcastic:
             sentiment = "sarcastic"
             confidence = 0.85
-            explanation = "Detected sarcastic idiom with ironic sentiment contrast."
-            urgency = "low"
-            scores = {"sarcastic": 0.85, "negative": 0.10, "neutral": 0.05}
         elif is_urgent:
             sentiment = "urgent"
             confidence = 0.90
-            explanation = "Transcript contains urgency markers indicating pressing need."
-            urgency = "high"
-            scores = {"urgent": 0.90, "negative": 0.05, "neutral": 0.05}
         elif is_negative:
             sentiment = "negative"
             confidence = 0.80
-            explanation = "Negative lexical items indicate distressing or unhappy tone."
-            urgency = "medium" if "bad" in lower else "low"
-            scores = {"negative": 0.80, "neutral": 0.15, "positive": 0.05}
         elif is_positive:
             sentiment = "positive"
             confidence = 0.85
-            explanation = "Affirmative and positive terminology expresses satisfaction."
-            urgency = "low"
-            scores = {"positive": 0.85, "neutral": 0.10, "happy": 0.05}
         else:
             sentiment = "neutral"
             confidence = 0.75
-            explanation = "Calm, informational phrasing without strong emotional polarity."
-            urgency = "low"
-            scores = {"neutral": 0.75, "positive": 0.15, "negative": 0.10}
 
         return ContextAnalysis(
             sentiment=sentiment,
             confidence=confidence,
-            explanation=explanation,
-            sarcasm_detected=is_sarcastic,
-            urgency=urgency,
-            sentiment_scores=scores,
         )
 
     def analyze(self, text: str) -> ContextAnalysis:
@@ -174,33 +139,25 @@ class ContextAnalyzer:
             return ContextAnalysis(
                 sentiment="neutral",
                 confidence=0.5,
-                explanation="Empty transcript provided.",
-                sarcasm_detected=False,
-                urgency="low",
-                sentiment_scores={"neutral": 1.0},
             )
 
         prompt = f"""
 Analyze the following spoken transcript:
 \"\"\"{text}\"\"\"
 
-Provide JSON with:
-- "sentiment": one of ["positive", "neutral", "negative", "urgent", "frustrated", "anxious", "happy", "sarcastic"]
-- "confidence": float between 0.0 and 1.0
-- "explanation": concise 1-sentence explanation of detected cues
-- "sarcasm_detected": boolean
-- "urgency": "low", "medium", or "high"
-- "sentiment_scores": dictionary mapping relevant sentiment labels to estimated float probabilities summing to 1.0
+Return ONLY a JSON object strictly matching this schema:
+{{
+  "sentiment": "<one of 'positive', 'neutral', 'negative', 'urgent', 'sarcastic'>",
+  "confidence": <float between 0.0 and 1.0>
+}}
 """
         raw_json = self._call_gemini_structured(prompt)
         if raw_json:
             try:
-                # Validate with Pydantic
                 return ContextAnalysis.model_validate(raw_json)
             except Exception as e:
                 logger.warning(f"Failed to validate Gemini JSON with Pydantic: {e}. Raw: {raw_json}")
 
-        # Fallback if Gemini failed or wasn't configured
         return self._heuristic_fallback(text)
 
 

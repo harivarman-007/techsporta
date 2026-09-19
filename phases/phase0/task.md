@@ -13,6 +13,7 @@
 ✅ React+Tailwind dev server running on `http://localhost:5173` — Vite ready in 5530ms confirmed via terminal logs.
 
 ## Deviations
+- Python runtime: Host machine uses Python 3.13.1 (`C:\Python313\python.exe`) instead of Python 3.11 specified in PROMPT.md. All dependencies, PyTorch 2.7.1+cu118, and Hugging Face pipelines compile and run cleanly.
 - `mediapipe==0.10.14` → `mediapipe==1.0.1`: version 0.10.x not available for Python 3.13. Additionally, mediapipe 1.0+ removed `mp.solutions` entirely — face detection replaced with OpenCV Haar Cascade (`haarcascade_frontalface_default.xml`).
 - `transformers==4.41.2` → `transformers>=4.45.0` (resolved to 5.17.0): 4.41.x requires `tokenizers<0.20` which has no pre-built Python 3.13 wheel and failed to compile (no MSVC linker present).
 - `accelerate==0.30.1` → `accelerate>=0.34.0` (resolved to 1.15.0): bumped to match new transformers.

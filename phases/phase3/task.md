@@ -11,4 +11,6 @@
 Two working fusion approaches (trained MLP + LLM reasoning), both tested against the same sample modality combinations, results logged for comparison.
 
 ## Deviations
-(log any deviation from the prescribed stack here, with a one-line reason)
+- Python runtime: Running on Python 3.13.1 on host system.
+- Synthetic Training Set: MLP trained on 40k synthetic vectors across 14 scenarios due to absence of real paired 3-channel dataset (accurately documented as synthetic validation only).
+- Comparison Log: Side-by-side comparison between `MLPFusionHead` and Gemini Flash reconciler logged to `backend/fusion_comparison.log`.

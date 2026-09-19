@@ -11,4 +11,5 @@
 Validated system with documented accuracy behavior, confirmed latency, backup demo video, and complete README.
 
 ## Deviations
-(log any deviation from the prescribed stack here, with a one-line reason)
+- Python runtime: Running on Python 3.13.1 on host system.
+- MLP Benchmarking: Clearly labeled as synthetic validation only, reflecting evaluation against the 8,000-sample shifted validation split.

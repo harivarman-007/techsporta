@@ -10,6 +10,8 @@
 Three working, independently testable endpoints, verified with real-time video/audio stream and live 30 FPS face mapping HUD. VRAM usage verified at ~2.1 GB on RTX 3050.
 
 ## Deviations
+- Python runtime: Running on Python 3.13.1 on host system.
 - `faster-whisper`: Run on CPU with `int8` quantization (takes <150ms) to avoid missing `cublas64_12.dll` errors on Windows with PyTorch CUDA 11.8, and to keep GPU VRAM reserved for ViT and Wav2Vec2.
-- `MediaPipe 1.0.1`: Uses `FaceLandmarker` with `face_landmarker.task` for 478 3D landmarks + 52 FACS blendshapes.
-- `FACS + Neutral Baseline Calibration`: Integrated Claude's `NeutralCalibrator`, multi-cue AU heuristics, and square crop `crop_face_from_landmarks` to eliminate resting-face angry/sad bias.
+- `MediaPipe 1.0.1`: Uses `FaceLandmarker` with `face_landmarker.task` for face detection and tight face crop for ViT.
+- `FACS & Calibration`: Advanced 52-FACS blendshapes and per-user resting-face baseline calibration are preserved as an optional opt-in feature (`use_facs=True` / `ENABLE_FACS=1`), but gated off by default. The default pipeline strictly runs MediaPipe crop -> ViT model -> emotion label + confidence as specified in PROMPT.md.
+- `WS /stream`: Real-time streaming WebSocket is preserved as an optional debug extra, gated off by default (`ENABLE_STREAM_WS=1`) to adhere to single-shot REST specifications.

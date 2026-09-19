@@ -575,11 +575,19 @@ _GLOBAL_RECOGNIZER = EmotionRecognizer()
 
 # ── FastAPI / Core Prediction Entrypoint ─────────────────────────────────────
 
-def predict_face_emotion(image_bytes: bytes) -> dict:
+def predict_face_emotion(image_bytes: bytes, use_facs: Optional[bool] = None) -> dict:
     """
-    Full calibrated face-emotion prediction pipeline.
-    Maintains compatibility with FastAPI endpoints and external callers.
+    Face emotion prediction pipeline.
+    Default (PROMPT.md Phase 1):
+      webcam frame in -> MediaPipe crop -> ViT model -> emotion label + confidence, returned as JSON.
+
+    Optional extra:
+      FACS blendshapes, neutral calibration baseline, and EMA temporal smoothing
+      are gated behind `use_facs=True` (or env ENABLE_FACS=1), disabled by default.
     """
+    if use_facs is None:
+        use_facs = os.getenv("ENABLE_FACS", "false").lower() in ("true", "1", "yes")
+
     nparr = np.frombuffer(image_bytes, np.uint8)
     img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
     if img_bgr is None:
@@ -600,8 +608,9 @@ def predict_face_emotion(image_bytes: bytes) -> dict:
                 lms = res.face_landmarks[0]
                 crop_bgr, bbox = crop_face_from_landmarks(img_bgr, lms)
                 face_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
-                landmarks_list = [[round(lm.x, 4), round(lm.y, 4), round(lm.z, 4)] for lm in lms]
-                blendshapes = res.face_blendshapes[0] if res.face_blendshapes else None
+                if use_facs:
+                    landmarks_list = [[round(lm.x, 4), round(lm.y, 4), round(lm.z, 4)] for lm in lms]
+                    blendshapes = res.face_blendshapes[0] if res.face_blendshapes else None
             else:
                 face_rgb = rgb
         except Exception as e:
@@ -616,30 +625,37 @@ def predict_face_emotion(image_bytes: bytes) -> dict:
     raw_results = pipe(pil_image, top_k=None)
     vit_scores = vit_pipeline_output_to_scores(raw_results)
 
-    # Process through Calibrated Emotion Recognizer
-    if landmarks_list and blendshapes:
+    # Optional extra: Process through Calibrated Emotion Recognizer (FACS + Calibration)
+    if use_facs and landmarks_list and blendshapes:
         lms_obj = res.face_landmarks[0]
         result = _GLOBAL_RECOGNIZER.process_frame(lms_obj, blendshapes, vit_scores)
         top_label = result.label
         top_conf = result.confidence
         scores = result.scores
         geo_scores = result.geometric_scores
+        out = {
+            "emotion": top_label,
+            "confidence": top_conf,
+            "all_scores": scores,
+            "vit_scores": vit_scores,
+            "geometric_scores": geo_scores,
+            "calibrated": _GLOBAL_RECOGNIZER.is_calibrated,
+            "facs_enabled": True,
+        }
+        if landmarks_list is not None:
+            out["landmarks"] = landmarks_list
     else:
+        # Default spec: pure ViT on MediaPipe crop
         sorted_vit = sorted(vit_scores.items(), key=lambda x: x[1], reverse=True)
         top_label, top_conf = sorted_vit[0]
-        scores = vit_scores
-        geo_scores = {}
+        out = {
+            "emotion": top_label,
+            "confidence": round(float(top_conf), 4),
+            "all_scores": vit_scores,
+            "vit_scores": vit_scores,
+            "facs_enabled": False,
+        }
 
-    out = {
-        "emotion": top_label,
-        "confidence": top_conf,
-        "all_scores": scores,
-        "vit_scores": vit_scores,
-        "geometric_scores": geo_scores,
-        "calibrated": _GLOBAL_RECOGNIZER.is_calibrated,
-    }
     if bbox is not None:
         out["bbox"] = list(bbox)
-    if landmarks_list is not None:
-        out["landmarks"] = landmarks_list
     return out

@@ -1,5 +1,10 @@
 """
 EmpathAI — Live Face Mapping & Calibrated Emotion HUD Viewer
+[OPTIONAL DEBUG EXTRA — Outside default PROMPT.md pipeline]
+
+This script is an optional developer HUD and debugging tool for inspecting
+MediaPipe face landmarks, testing FACS blendshapes, and interactive resting-face calibration.
+It is NOT part of the default runtime or inference pipeline.
 
 Features:
   • Real-time webcam feed (30 FPS)
