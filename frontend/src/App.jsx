@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import './index.css'
+import { getFaceLandmarker, detectFaceEmotionClient } from './liveFaceTracker'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -207,41 +208,57 @@ export default function App() {
   useEffect(() => {
     if (!streamActive || processing || !showHUD) return
     let active = true
+    let landmarker = null
+
+    // Initialize client-side GPU face landmarker for instant 0ms latency tracking
+    getFaceLandmarker().then((lm) => {
+      if (active) landmarker = lm
+    })
+
     const loop = async () => {
+      let lastServerPoll = 0
       while (active) {
         if (videoRef.current && videoRef.current.readyState >= 2 && !processing) {
-          try {
-            const v = videoRef.current
-            const c = document.createElement('canvas')
-            // ViT native dimension (224x224) centered square crop
-            const size = 224
-            c.width = size
-            c.height = size
-            const minDim = Math.min(v.videoWidth || 640, v.videoHeight || 480)
-            const sx = ((v.videoWidth || 640) - minDim) / 2
-            const sy = ((v.videoHeight || 480) - minDim) / 2
-            c.getContext('2d').drawImage(v, sx, sy, minDim, minDim, 0, 0, size, size)
-            const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.65))
-            if (blob && active) {
-              const fd = new FormData()
-              fd.append('image', blob, 'live.jpg')
-              const res = await fetch(`${API}/face-emotion`, { method: 'POST', body: fd })
-              if (res.ok && active) {
-                const data = await res.json()
-                setLiveFaceReading(data)
-                if (recordingRef.current && blob) {
-                  const score = (data.confidence || 0) + (data.emotion?.toLowerCase() !== 'neutral' ? 1 : 0)
-                  if (score > bestFrameScoreRef.current || !bestFrameBlobRef.current) {
-                    bestFrameBlobRef.current = blob
-                    bestFrameScoreRef.current = score
-                  }
+          const now = performance.now()
+          let gotReading = false
+
+          // 1. Instant Client-Side MediaPipe GPU tracking (0ms delay, 25-30 FPS)
+          if (landmarker) {
+            const clientReading = detectFaceEmotionClient(videoRef.current, landmarker, now)
+            if (clientReading) {
+              setLiveFaceReading(clientReading)
+              gotReading = true
+            }
+          }
+
+          // 2. Fallback to server while client landmarker is loading (or if unsupported)
+          if (!gotReading && now - lastServerPoll > 450) {
+            lastServerPoll = now
+            try {
+              const v = videoRef.current
+              const c = document.createElement('canvas')
+              const size = 224
+              c.width = size
+              c.height = size
+              const minDim = Math.min(v.videoWidth || 640, v.videoHeight || 480)
+              const sx = ((v.videoWidth || 640) - minDim) / 2
+              const sy = ((v.videoHeight || 480) - minDim) / 2
+              c.getContext('2d').drawImage(v, sx, sy, minDim, minDim, 0, 0, size, size)
+              const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.65))
+              if (blob && active) {
+                const fd = new FormData()
+                fd.append('image', blob, 'live.jpg')
+                const res = await fetch(`${API}/face-emotion`, { method: 'POST', body: fd })
+                if (res.ok && active) {
+                  const data = await res.json()
+                  setLiveFaceReading(data)
                 }
               }
-            }
-          } catch { }
+            } catch { }
+          }
         }
-        // Small 150ms rest between frames — ensures zero request queuing and real-time responsiveness
-        await new Promise((r) => setTimeout(r, 150))
+        // 40ms tick = ~25 FPS real-time responsiveness with zero network delay
+        await new Promise((r) => setTimeout(r, 40))
       }
     }
     loop()
