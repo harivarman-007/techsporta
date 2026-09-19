@@ -1,42 +1,52 @@
-# Environment variables and API keys
+# ── Environment ───────────────────────────────────────────
 .env
 *.env
-!.env.example
+!backend/.env.example
 backend/.env
 
-# Python Virtual Environments
+# ── Python ────────────────────────────────────────────────
 venv/
 .venv/
 env/
 backend/venv/
-
-# Python Cache & Bytecode
 __pycache__/
 *.py[cod]
 *$py.class
-backend/__pycache__/
+*.pyo
+.pytest_cache/
 
-# Node / Frontend
+# ── Node / Frontend ───────────────────────────────────────
 node_modules/
-frontend/node_modules/
 dist/
-frontend/dist/
 *.local
 
-# Logs and Temporary files
+# ── Logs ──────────────────────────────────────────────────
 *.log
-!backend/fusion_comparison.log
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
 
-# OS specific files
+# ── OS ────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 desktop.ini
 
-# IDE & Editor configs
+# ── IDE ───────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
+
+# ── Internal planning / dev-only files ────────────────────
+phases/
+plan.md
+PROMPT.md
+DEVIATIONS.md
+backend/fusion_comparison.log
+backend/test_phase1.py
+backend/test_phase7.py
+backend/test_stream.py
+backend/compare_fusion.py
+backend/vram_logger.py
+frontend/README.md
+frontend/src/App.css
+frontend/src/assets/

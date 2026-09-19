@@ -1,7 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react'
 import './index.css'
 
-/* ── helpers ── */
+const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+
+/* â”€â”€ helpers â”€â”€ */
 const Label = ({ children, right }) => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
     <span className="section-label">{children}</span>
@@ -43,7 +45,7 @@ const ChannelCard = ({ label, emotion, confidence, note, live = false }) => (
         </>
       ) : (
         <>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#d4d4d8', lineHeight: 1.1 }}>—</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#d4d4d8', lineHeight: 1.1 }}>â€”</div>
           <div style={{ fontSize: 11, color: '#a1a1aa', marginTop: 4 }}>{note}</div>
         </>
       )}
@@ -51,7 +53,7 @@ const ChannelCard = ({ label, emotion, confidence, note, live = false }) => (
   </div>
 )
 
-/* ── main app ── */
+/* â”€â”€ main app â”€â”€ */
 export default function App() {
   const [streamActive, setStreamActive] = useState(false)
   const [recording, setRecording] = useState(false)
@@ -137,7 +139,7 @@ export default function App() {
       if (frame) fd.append('image', frame, 'frame.jpg')
       if (audioBlob) fd.append('audio', audioBlob, 'audio.webm')
       fd.append('mode', fusionMode); fd.append('generate_tts', 'true')
-      const r = await fetch('http://localhost:8000/analyze', { method: 'POST', body: fd })
+      const r = await fetch(`${API}/analyze`, { method: 'POST', body: fd })
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || `Error ${r.status}`) }
       const result = await r.json()
       setAnalysisResult(result)
@@ -176,9 +178,9 @@ export default function App() {
     const payload = { ...preset, mode: fusionMode }
     setLiveFaceReading({ emotion: preset.face.emotion, confidence: preset.face.confidence, all_scores: preset.face.probs })
     try {
-      const fuseResp = await fetch('http://localhost:8000/fuse', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+      const fuseResp = await fetch(`${API}/fuse`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
       const fuse = await fuseResp.json()
-      const speakResp = await fetch('http://localhost:8000/speak', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: fuse.narration, label: fuse.label, mismatch: fuse.mismatch, mismatch_kind: fuse.mismatch_kind }) })
+      const speakResp = await fetch(`${API}/speak`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: fuse.narration, label: fuse.label, mismatch: fuse.mismatch, mismatch_kind: fuse.mismatch_kind }) })
       const audioUrl = URL.createObjectURL(await speakResp.blob())
       setAnalysisResult({
         primary_emotion: fuse.label, confidence: fuse.confidence,
@@ -215,7 +217,7 @@ export default function App() {
         const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.8))
         if (!blob || !active) return
         const fd = new FormData(); fd.append('image', blob, 'live.jpg')
-        const res = await fetch('http://localhost:8000/face-emotion', { method: 'POST', body: fd })
+        const res = await fetch(`${API}/face-emotion`, { method: 'POST', body: fd })
         if (res.ok && active) {
           const data = await res.json(); setLiveFaceReading(data)
           if (recordingRef.current && blob) {
@@ -256,14 +258,14 @@ export default function App() {
     <div style={S.page}>
       <audio ref={audioPlayerRef} />
 
-      {/* ── Header ── */}
+      {/* â”€â”€ Header â”€â”€ */}
       <header style={S.header}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 900, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#18181b' }}>EmpathAI</span>
             <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', padding: '2px 6px', border: '1.5px solid #e4e4e7', borderRadius: 4, color: '#71717a', textTransform: 'uppercase' }}>v0.5</span>
           </div>
-          <span style={{ fontSize: 11, color: '#a1a1aa', letterSpacing: '0.03em' }}>Multimodal emotion recognition · assistive speech synthesis</span>
+          <span style={{ fontSize: 11, color: '#a1a1aa', letterSpacing: '0.03em' }}>Multimodal emotion recognition Â· assistive speech synthesis</span>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -283,7 +285,7 @@ export default function App() {
         </div>
       </header>
 
-      {/* ── Error ── */}
+      {/* â”€â”€ Error â”€â”€ */}
       {errorMsg && (
         <div style={{ maxWidth: 1280, margin: '16px auto 0', padding: '0 32px' }}>
           <div style={{ padding: '10px 16px', border: '1.5px solid #fecaca', background: '#fef2f2', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, color: '#991b1b' }}>
@@ -293,10 +295,10 @@ export default function App() {
         </div>
       )}
 
-      {/* ── Workspace ── */}
+      {/* â”€â”€ Workspace â”€â”€ */}
       <div style={S.workspace}>
 
-        {/* ════ LEFT COLUMN: Camera + Spectrum ════ */}
+        {/* â•â•â•â• LEFT COLUMN: Camera + Spectrum â•â•â•â• */}
         <div style={S.leftCol}>
 
           {/* Camera card */}
@@ -384,10 +386,10 @@ export default function App() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, paddingBottom: 12, borderBottom: '1.5px solid #f4f4f5' }}>
               <div>
                 <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#52525b' }}>Facial Emotion Spectrum</div>
-                <div style={{ fontSize: 10, color: '#a1a1aa', marginTop: 2 }}>HuggingFace ViT FP16 · live classification</div>
+                <div style={{ fontSize: 10, color: '#a1a1aa', marginTop: 2 }}>HuggingFace ViT FP16 Â· live classification</div>
               </div>
               {streamActive && liveFaceReading
-                ? <Badge variant="live" dot>Live · 1.5 FPS</Badge>
+                ? <Badge variant="live" dot>Live Â· 1.5 FPS</Badge>
                 : scores
                 ? <Badge variant="neutral">Sample</Badge>
                 : <Badge variant="neutral">Standby</Badge>}
@@ -412,8 +414,8 @@ export default function App() {
             {scores && (
               <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1.5px solid #f4f4f5', fontSize: 10, color: '#a1a1aa' }}>
                 Top: <strong style={{ color: '#52525b', textTransform: 'capitalize' }}>{topEmotion}</strong>
-                {liveFaceReading && ` · ${Math.round((liveFaceReading.confidence || 0) * 100)}% confidence`}
-                {streamActive && liveFaceReading && ' · live stream'}
+                {liveFaceReading && ` Â· ${Math.round((liveFaceReading.confidence || 0) * 100)}% confidence`}
+                {streamActive && liveFaceReading && ' Â· live stream'}
               </div>
             )}
             {!scores && (
@@ -423,7 +425,7 @@ export default function App() {
 
         </div>
 
-        {/* ════ RIGHT COLUMN: Insight + Channels + Scenarios ════ */}
+        {/* â•â•â•â• RIGHT COLUMN: Insight + Channels + Scenarios â•â•â•â• */}
         <div style={S.rightCol}>
 
           {/* Mismatch banner */}
@@ -444,7 +446,7 @@ export default function App() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#71717a' }}>Primary Emotional State</span>
               {analysisResult
-                ? <Badge variant="neutral">Fused · {Math.round((analysisResult.confidence || 0) * 100)}% conf</Badge>
+                ? <Badge variant="neutral">Fused Â· {Math.round((analysisResult.confidence || 0) * 100)}% conf</Badge>
                 : isLive
                 ? <Badge variant="live" dot>Live Tracking</Badge>
                 : <span style={{ fontSize: 10, color: '#c4c4c8', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Awaiting input</span>}
@@ -488,23 +490,23 @@ export default function App() {
 
           {/* Signal Channels */}
           <div>
-            <Label right={isLive ? '← live camera' : analysisResult ? '← last recording' : null}>Signal Channels</Label>
+            <Label right={isLive ? 'â† live camera' : analysisResult ? 'â† last recording' : null}>Signal Channels</Label>
             <div style={S.channelGrid}>
               <ChannelCard
-                label="Face · ViT"
+                label="Face Â· ViT"
                 emotion={analysisResult?.intermediate_results?.face?.emotion || liveFaceReading?.emotion}
                 confidence={analysisResult?.intermediate_results?.face?.confidence || liveFaceReading?.confidence}
                 note="No video frame"
                 live={!analysisResult && !!liveFaceReading}
               />
               <ChannelCard
-                label="Voice · XLSR"
+                label="Voice Â· XLSR"
                 emotion={analysisResult?.intermediate_results?.speech?.emotion}
                 confidence={analysisResult?.intermediate_results?.speech?.confidence}
                 note="Record audio (Space)"
               />
               <div className="card-sm" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#71717a' }}>Transcript · Whisper</span>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#71717a' }}>Transcript Â· Whisper</span>
                 {analysisResult?.intermediate_results?.transcript?.transcript ? (
                   <>
                     <p style={{ fontSize: 12, color: '#18181b', fontStyle: 'italic', fontWeight: 600, lineHeight: 1.55 }}>
@@ -516,7 +518,7 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <div style={{ fontSize: 20, fontWeight: 900, color: '#d4d4d8', lineHeight: 1 }}>—</div>
+                    <div style={{ fontSize: 20, fontWeight: 900, color: '#d4d4d8', lineHeight: 1 }}>â€”</div>
                     <div style={{ fontSize: 11, color: '#a1a1aa', marginTop: 2 }}>Awaiting speech</div>
                   </>
                 )}
@@ -564,3 +566,4 @@ export default function App() {
     </div>
   )
 }
+
