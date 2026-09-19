@@ -30,5 +30,5 @@ COPY . .
 # Expose FastAPI port
 EXPOSE 8000
 
-# Run with uvicorn
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+# Run with uvicorn (respects $PORT from cloud platforms like Railway, defaults to 8000)
+CMD sh -c "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"
