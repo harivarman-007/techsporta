@@ -97,6 +97,7 @@ async def realtime_stream(websocket: WebSocket, camera: int = 0):
     from speech_emotion import predict_speech_emotion
     from transcript import transcribe_audio
     from audio_capture import capture_speech_segments
+    from denoise import denoise_wav_bytes
 
     loop = asyncio.get_event_loop()
     stop_event = threading.Event()
@@ -129,6 +130,7 @@ async def realtime_stream(websocket: WebSocket, camera: int = 0):
             for wav_bytes in capture_speech_segments(stop_event=stop_event):
                 if stop_event.is_set():
                     break
+                wav_bytes = denoise_wav_bytes(wav_bytes)
                 t0 = time.perf_counter()
                 try:
                     speech  = predict_speech_emotion(wav_bytes)
@@ -216,8 +218,11 @@ async def face_emotion(image: UploadFile = File(...)):
 @app.post("/speech-emotion", tags=["phase1"])
 async def speech_emotion(audio: UploadFile = File(...)):
     try:
+        from denoise import denoise_wav_bytes
         from speech_emotion import predict_speech_emotion
-        return predict_speech_emotion(await audio.read())
+        raw_bytes = await audio.read()
+        cleaned_bytes = denoise_wav_bytes(raw_bytes)
+        return predict_speech_emotion(cleaned_bytes)
     except Exception as exc:
         logger.exception("speech-emotion error")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -226,8 +231,11 @@ async def speech_emotion(audio: UploadFile = File(...)):
 @app.post("/transcript", tags=["phase1"])
 async def transcript(audio: UploadFile = File(...)):
     try:
+        from denoise import denoise_wav_bytes
         from transcript import transcribe_audio
-        return transcribe_audio(await audio.read())
+        raw_bytes = await audio.read()
+        cleaned_bytes = denoise_wav_bytes(raw_bytes)
+        return transcribe_audio(cleaned_bytes)
     except Exception as exc:
         logger.exception("transcript error")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -310,9 +318,12 @@ async def analyze_endpoint(
 ):
     try:
         from pipeline import analyze_multimodal
+        from denoise import denoise_wav_bytes
 
         img_bytes = (await image.read()) if image is not None else None
         aud_bytes = (await audio.read()) if audio is not None else None
+        if aud_bytes is not None:
+            aud_bytes = denoise_wav_bytes(aud_bytes)
         vid_bytes = (await video.read()) if video is not None else None
 
         return analyze_multimodal(

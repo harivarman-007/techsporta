@@ -108,6 +108,14 @@ def analyze_multimodal(
         if audio_bytes is None:
             audio_bytes = extracted_aud
 
+    # Apply noise suppression if audio is provided
+    if audio_bytes and len(audio_bytes) > 0:
+        try:
+            from denoise import denoise_wav_bytes
+            audio_bytes = denoise_wav_bytes(audio_bytes)
+        except Exception as exc:
+            logger.warning("Pipeline audio denoise fallback: %s", exc)
+
     # 1. Face Emotion Inference
     face_res = None
     if image_bytes and len(image_bytes) > 0:
