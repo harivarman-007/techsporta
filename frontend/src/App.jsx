@@ -19,6 +19,8 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState(null)
   const [analysisResult, setAnalysisResult] = useState(null)
   const [fusionMode, setFusionMode] = useState('full') // 'fast' | 'full'
+  const [liveFaceReading, setLiveFaceReading] = useState(null)
+  const [showLiveHUD, setShowLiveHUD] = useState(true)
 
   const videoRef = useRef(null)
   const mediaStreamRef = useRef(null)
@@ -56,6 +58,7 @@ export default function App() {
       videoRef.current.srcObject = null
     }
     setStreamActive(false)
+    setLiveFaceReading(null)
   }
 
   // Start recording audio + snapshot
@@ -278,6 +281,55 @@ export default function App() {
     }
   }, [])
 
+  // Live face inspection polling when camera is active (mirrors live_face_view.py)
+  useEffect(() => {
+    if (!streamActive || recording || processing || !showLiveHUD) {
+      return
+    }
+
+    let isSubscribed = true
+    let isRequestBusy = false
+
+    const pollLiveFace = async () => {
+      if (isRequestBusy || !videoRef.current || videoRef.current.readyState < 2) return
+      isRequestBusy = true
+
+      try {
+        const video = videoRef.current
+        const canvas = document.createElement('canvas')
+        canvas.width = Math.min(video.videoWidth || 640, 320)
+        canvas.height = Math.min(video.videoHeight || 480, 240)
+        const ctx = canvas.getContext('2d')
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+        const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.8))
+        if (!blob || !isSubscribed) return
+
+        const formData = new FormData()
+        formData.append('image', blob, 'live_frame.jpg')
+
+        const res = await fetch('http://localhost:8000/face-emotion', {
+          method: 'POST',
+          body: formData,
+        })
+        if (res.ok && isSubscribed) {
+          const data = await res.json()
+          setLiveFaceReading(data)
+        }
+      } catch (err) {
+        // silent fail on transient network hiccups
+      } finally {
+        isRequestBusy = false
+      }
+    }
+
+    const interval = setInterval(pollLiveFace, 650)
+    return () => {
+      isSubscribed = false
+      clearInterval(interval)
+    }
+  }, [streamActive, recording, processing, showLiveHUD])
+
   const currentEmotion = analysisResult?.primary_emotion?.toLowerCase() || 'neutral'
   const emotionStyle = EMOTION_COLORS[currentEmotion] || EMOTION_COLORS.neutral
 
@@ -417,6 +469,24 @@ export default function App() {
                     </p>
                   </div>
                 )}
+
+                {/* Live Face Emotion HUD Overlay (mirrors live_face_view.py) */}
+                {streamActive && showLiveHUD && liveFaceReading && !processing && (
+                  <div className="absolute top-3 right-3 bg-slate-950/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-2 shadow-xl animate-fade-in">
+                    <span className="text-base">
+                      {EMOTION_COLORS[liveFaceReading.emotion?.toLowerCase()]?.icon || '😐'}
+                    </span>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold capitalize text-white leading-tight flex items-center gap-1.5">
+                        {liveFaceReading.emotion}
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {Math.round((liveFaceReading.confidence || 0) * 100)}% live
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Controls */}
@@ -448,8 +518,67 @@ export default function App() {
                     >
                       Turn Off
                     </button>
+                    {showLiveHUD ? (
+                      <button
+                        onClick={() => setShowLiveHUD(false)}
+                        className="px-2.5 py-3 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 text-xs hover:bg-cyan-500/25 transition-all"
+                        title="Hide Live Face HUD"
+                      >
+                        👁️ HUD: ON
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => setShowLiveHUD(true)}
+                        className="px-2.5 py-3 rounded-xl bg-white/5 border border-white/10 text-slate-400 text-xs hover:text-white transition-all"
+                        title="Show Live Face HUD"
+                      >
+                        👁️ HUD: OFF
+                      </button>
+                    )}
                   </div>
                 ) : null}
+
+                {/* Live Face Emotion Spectrum Panel (from live_face_view.py) */}
+                {streamActive && showLiveHUD && liveFaceReading?.all_scores && (
+                  <div className="mt-2 p-3 rounded-xl bg-slate-950/60 border border-white/5 flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                        Live Face Spectrum (ViT FP16 on GPU)
+                      </span>
+                      <span className="text-[10px] text-emerald-400 font-mono">
+                        Active
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-1">
+                      {Object.entries(liveFaceReading.all_scores).map(([emo, score]) => {
+                        const pct = Math.round(score * 100)
+                        const isTop = emo === liveFaceReading.emotion
+                        const style = EMOTION_COLORS[emo] || EMOTION_COLORS.neutral
+                        return (
+                          <div key={emo} className="flex items-center gap-2 text-xs font-mono">
+                            <span className="w-20 capitalize text-[11px] text-slate-400 flex items-center gap-1">
+                              <span>{style.icon}</span>
+                              <span className={isTop ? 'text-white font-semibold' : ''}>{emo}</span>
+                            </span>
+                            <div className="flex-1 h-2 bg-slate-800/80 rounded-full overflow-hidden relative">
+                              <div
+                                className="h-full transition-all duration-300 rounded-full"
+                                style={{
+                                  width: `${pct}%`,
+                                  backgroundColor: isTop ? (style.border || '#10b981') : 'rgba(148, 163, 184, 0.4)',
+                                }}
+                              />
+                            </div>
+                            <span className={`w-8 text-right text-[10px] ${isTop ? 'text-white font-bold' : 'text-slate-500'}`}>
+                              {pct}%
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Quick Preset Demos */}
                 <div className="mt-2 pt-3 border-t border-white/5">
