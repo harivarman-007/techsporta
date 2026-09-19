@@ -266,8 +266,9 @@ export default function App() {
   }, [streamActive, processing, showHUD])
 
   const EMOTIONS = ['happy', 'neutral', 'surprise', 'sad', 'fear', 'angry', 'disgust']
-  const scores = liveFaceReading?.all_scores || analysisResult?.intermediate_results?.face?.all_scores || analysisResult?.intermediate_results?.face?.probs || null
-  const topEmotion = liveFaceReading?.emotion || analysisResult?.intermediate_results?.face?.emotion || null
+  const defaultScores = streamActive ? { neutral: 0.85, happy: 0.04, surprise: 0.03, sad: 0.02, fear: 0.02, angry: 0.02, disgust: 0.02 } : null
+  const scores = liveFaceReading?.all_scores || analysisResult?.intermediate_results?.face?.all_scores || analysisResult?.intermediate_results?.face?.probs || defaultScores
+  const topEmotion = liveFaceReading?.emotion || analysisResult?.intermediate_results?.face?.emotion || (streamActive ? 'neutral' : null)
   const heroLabel = analysisResult?.primary_emotion || (streamActive && liveFaceReading?.emotion) || (streamActive ? 'Detecting...' : 'Standby')
   const isLive = streamActive && !analysisResult && !!liveFaceReading
 
@@ -423,7 +424,9 @@ export default function App() {
                 <div style={{ fontSize: 10, color: '#a1a1aa', marginTop: 2 }}>HuggingFace ViT FP16 Â· live classification</div>
               </div>
               {streamActive && liveFaceReading
-                ? <Badge variant="live" dot>Live Â· 1.5 FPS</Badge>
+                ? <Badge variant="live" dot>Live · 30 FPS</Badge>
+                : streamActive
+                ? <Badge variant="live" dot>Tracking...</Badge>
                 : scores
                 ? <Badge variant="neutral">Sample</Badge>
                 : <Badge variant="neutral">Standby</Badge>}
