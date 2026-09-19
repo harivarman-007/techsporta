@@ -218,6 +218,7 @@ export default function App() {
 
     const loop = async () => {
       let lastServerPoll = 0
+      let serverInFlight = false
       while (active) {
         if (videoRef.current && videoRef.current.readyState >= 2 && !processing) {
           const now = performance.now()
@@ -232,9 +233,10 @@ export default function App() {
             }
           }
 
-          // 2. Fallback to server while client landmarker is loading (or if unsupported)
-          if (!gotReading && now - lastServerPoll > 450) {
+          // 2. Controlled fallback while client landmarker initializes (strictly 1 in-flight request)
+          if (!gotReading && !serverInFlight && now - lastServerPoll > 800) {
             lastServerPoll = now
+            serverInFlight = true
             try {
               const v = videoRef.current
               const c = document.createElement('canvas')
@@ -255,7 +257,9 @@ export default function App() {
                   setLiveFaceReading(data)
                 }
               }
-            } catch { }
+            } catch { } finally {
+              serverInFlight = false
+            }
           }
         }
         // 40ms tick = ~25 FPS real-time responsiveness with zero network delay

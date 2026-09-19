@@ -16,6 +16,7 @@ import os
 import time
 import json
 import logging
+import threading
 from collections import deque
 from dataclasses import dataclass, field, asdict
 from functools import lru_cache
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 MODEL_ID = "trpakov/vit-face-expression"
+_INFERENCE_LOCK = threading.Lock()
 
 EMOTIONS: List[str] = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surprise"]
 
@@ -603,32 +605,33 @@ def predict_face_emotion(image_bytes: bytes, use_facs: Optional[bool] = None) ->
     landmarks_list = None
     blendshapes = None
 
-    if landmarker is not None:
-        try:
-            import mediapipe as mp
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
-            res = landmarker.detect(mp_image)
-            if res.face_landmarks and len(res.face_landmarks) > 0:
-                lms = res.face_landmarks[0]
-                crop_bgr, bbox = crop_face_from_landmarks(img_bgr, lms)
-                face_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
-                if use_facs:
-                    landmarks_list = [[round(lm.x, 4), round(lm.y, 4), round(lm.z, 4)] for lm in lms]
-                    blendshapes = res.face_blendshapes[0] if res.face_blendshapes else None
-            else:
+    with _INFERENCE_LOCK:
+        if landmarker is not None:
+            try:
+                import mediapipe as mp
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+                res = landmarker.detect(mp_image)
+                if res.face_landmarks and len(res.face_landmarks) > 0:
+                    lms = res.face_landmarks[0]
+                    crop_bgr, bbox = crop_face_from_landmarks(img_bgr, lms)
+                    face_rgb = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)
+                    if use_facs:
+                        landmarks_list = [[round(lm.x, 4), round(lm.y, 4), round(lm.z, 4)] for lm in lms]
+                        blendshapes = res.face_blendshapes[0] if res.face_blendshapes else None
+                else:
+                    face_rgb = rgb
+            except Exception as e:
+                logger.warning("MediaPipe error: %s", e)
                 face_rgb = rgb
-        except Exception as e:
-            logger.warning("MediaPipe error: %s", e)
+        else:
             face_rgb = rgb
-    else:
-        face_rgb = rgb
 
-    # Run ViT on tight face crop with zero-overhead inference mode
-    pil_image = Image.fromarray(face_rgb)
-    pipe = _get_face_emotion_pipeline()
-    with torch.inference_mode():
-        raw_results = pipe(pil_image, top_k=None)
-    vit_scores = vit_pipeline_output_to_scores(raw_results)
+        # Run ViT on tight face crop with zero-overhead inference mode
+        pil_image = Image.fromarray(face_rgb)
+        pipe = _get_face_emotion_pipeline()
+        with torch.inference_mode():
+            raw_results = pipe(pil_image, top_k=None)
+        vit_scores = vit_pipeline_output_to_scores(raw_results)
 
     # Optional extra: Process through Calibrated Emotion Recognizer (FACS + Calibration)
     if use_facs and landmarks_list and blendshapes:
