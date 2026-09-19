@@ -2,7 +2,17 @@ import React, { useState, useRef, useEffect } from 'react'
 import './index.css'
 import { getFaceLandmarker, detectFaceEmotionClient, resetFaceTracker } from './liveFaceTracker'
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const getApiUrl = () => {
+  if (import.meta.env.VITE_API_URL) return import.meta.env.VITE_API_URL
+  if (typeof window !== 'undefined') {
+    if (window.location.protocol === 'https:' || (window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1')) {
+      return 'https://techsporta-production.up.railway.app'
+    }
+  }
+  return 'http://localhost:8000'
+}
+
+const API = getApiUrl()
 
 /* â”€â”€ helpers â”€â”€ */
 const Label = ({ children, right }) => (

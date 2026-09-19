@@ -16,6 +16,6 @@
     }
   ],
   "env": {
-    "VITE_API_URL": "@empathai_api_url"
+    "VITE_API_URL": "https://techsporta-production.up.railway.app"
   }
 }
