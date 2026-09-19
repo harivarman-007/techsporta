@@ -56,7 +56,7 @@ const ChannelCard = ({ label, emotion, confidence, note, live = false }) => (
         </>
       ) : (
         <>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#d4d4d8', lineHeight: 1.1 }}>â€”</div>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#d4d4d8', lineHeight: 1.1 }}>—</div>
           <div style={{ fontSize: 11, color: '#a1a1aa', marginTop: 4 }}>{note}</div>
         </>
       )}
@@ -436,7 +436,7 @@ export default function App() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, paddingBottom: 12, borderBottom: '1.5px solid #f4f4f5' }}>
               <div>
                 <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#52525b' }}>Facial Emotion Spectrum</div>
-                <div style={{ fontSize: 10, color: '#a1a1aa', marginTop: 2 }}>HuggingFace ViT FP16 Â· live classification</div>
+                <div style={{ fontSize: 10, color: '#a1a1aa', marginTop: 2 }}>HuggingFace ViT FP16 · live classification</div>
               </div>
               {streamActive && liveFaceReading
                 ? <Badge variant="live" dot>Live · 30 FPS</Badge>
@@ -466,8 +466,8 @@ export default function App() {
             {scores && (
               <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1.5px solid #f4f4f5', fontSize: 10, color: '#a1a1aa' }}>
                 Top: <strong style={{ color: '#52525b', textTransform: 'capitalize' }}>{topEmotion}</strong>
-                {liveFaceReading && ` Â· ${Math.round((liveFaceReading.confidence || 0) * 100)}% confidence`}
-                {streamActive && liveFaceReading && ' Â· live stream'}
+                {liveFaceReading && ` · ${Math.round((liveFaceReading.confidence || 0) * 100)}% confidence`}
+                {streamActive && liveFaceReading && ' · live stream'}
               </div>
             )}
             {!scores && (
@@ -477,7 +477,7 @@ export default function App() {
 
         </div>
 
-        {/* â•â•â•â• RIGHT COLUMN: Insight + Channels + Scenarios â•â•â•â• */}
+        {/* ════ RIGHT COLUMN: Insight + Channels + Scenarios ════ */}
         <div style={S.rightCol}>
 
           {/* Mismatch banner */}
@@ -498,7 +498,7 @@ export default function App() {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#71717a' }}>Primary Emotional State</span>
               {analysisResult
-                ? <Badge variant="neutral">Fused Â· {Math.round((analysisResult.confidence || 0) * 100)}% conf</Badge>
+                ? <Badge variant="neutral">Fused · {Math.round((analysisResult.confidence || 0) * 100)}% conf</Badge>
                 : isLive
                 ? <Badge variant="live" dot>Live Tracking</Badge>
                 : <span style={{ fontSize: 10, color: '#c4c4c8', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase' }}>Awaiting input</span>}
@@ -542,23 +542,23 @@ export default function App() {
 
           {/* Signal Channels */}
           <div>
-            <Label right={isLive ? 'â† live camera' : analysisResult ? 'â† last recording' : null}>Signal Channels</Label>
+            <Label right={isLive ? '← live camera' : analysisResult ? '← last recording' : null}>Signal Channels</Label>
             <div style={S.channelGrid}>
               <ChannelCard
-                label="Face Â· ViT"
+                label="Face · ViT"
                 emotion={analysisResult?.intermediate_results?.face?.emotion || liveFaceReading?.emotion}
                 confidence={analysisResult?.intermediate_results?.face?.confidence || liveFaceReading?.confidence}
                 note="No video frame"
                 live={!analysisResult && !!liveFaceReading}
               />
               <ChannelCard
-                label="Voice Â· XLSR"
+                label="Voice · XLSR"
                 emotion={analysisResult?.intermediate_results?.speech?.emotion}
                 confidence={analysisResult?.intermediate_results?.speech?.confidence}
                 note="Record audio (Space)"
               />
               <div className="card-sm" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#71717a' }}>Transcript Â· Whisper</span>
+                <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#71717a' }}>Transcript · Whisper</span>
                 {analysisResult?.intermediate_results?.transcript?.transcript ? (
                   <>
                     <p style={{ fontSize: 12, color: '#18181b', fontStyle: 'italic', fontWeight: 600, lineHeight: 1.55 }}>
@@ -570,7 +570,7 @@ export default function App() {
                   </>
                 ) : (
                   <>
-                    <div style={{ fontSize: 20, fontWeight: 900, color: '#d4d4d8', lineHeight: 1 }}>â€”</div>
+                    <div style={{ fontSize: 20, fontWeight: 900, color: '#d4d4d8', lineHeight: 1 }}>—</div>
                     <div style={{ fontSize: 11, color: '#a1a1aa', marginTop: 2 }}>Awaiting speech</div>
                   </>
                 )}
