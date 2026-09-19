@@ -1,17 +1,15 @@
 @import "tailwindcss";
 
-/* ── EmpathAI Design System ── */
+/* ── EmpathAI Minimalist Monochrome Design System ── */
 :root {
-  --color-bg: #0d0e14;
-  --color-surface: #13151f;
-  --color-surface-2: #1a1d2e;
-  --color-border: rgba(255, 255, 255, 0.08);
-  --color-accent: #7c3aed;
-  --color-accent-light: #a78bfa;
-  --color-accent-glow: rgba(124, 58, 237, 0.35);
-  --color-text: #e2e8f0;
-  --color-muted: #64748b;
-  --color-success: #10b981;
+  --color-bg: #09090b;
+  --color-surface: #121215;
+  --color-surface-hover: #18181b;
+  --color-border: #27272a;
+  --color-border-subtle: #1f1f23;
+  --color-text: #fafafa;
+  --color-text-muted: #a1a1aa;
+  --color-text-dim: #71717a;
 }
 
 *,
@@ -25,14 +23,32 @@
 html,
 body,
 #root {
-  height: 100%;
+  min-height: 100%;
   width: 100%;
+  background-color: var(--color-bg);
+  color: var(--color-text);
 }
 
 body {
-  background-color: var(--color-bg);
-  color: var(--color-text);
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-bg);
+  color: var(--color-text);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #09090b;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
 }
