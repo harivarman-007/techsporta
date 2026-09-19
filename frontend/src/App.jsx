@@ -271,7 +271,7 @@ export default function App() {
   }, [streamActive, processing, showHUD])
 
   const EMOTIONS = ['happy', 'neutral', 'surprise', 'sad', 'fear', 'angry', 'disgust']
-  const defaultScores = streamActive ? { neutral: 0.85, happy: 0.04, surprise: 0.03, sad: 0.02, fear: 0.02, angry: 0.02, disgust: 0.02 } : null
+  const defaultScores = streamActive ? { neutral: 0.52, happy: 0.12, surprise: 0.08, sad: 0.08, fear: 0.06, angry: 0.08, disgust: 0.06 } : null
   const scores = liveFaceReading?.all_scores || analysisResult?.intermediate_results?.face?.all_scores || analysisResult?.intermediate_results?.face?.probs || defaultScores
   const topEmotion = liveFaceReading?.emotion || analysisResult?.intermediate_results?.face?.emotion || (streamActive ? 'neutral' : null)
   const heroLabel = analysisResult?.primary_emotion || (streamActive && liveFaceReading?.emotion) || (streamActive ? 'Detecting...' : 'Standby')

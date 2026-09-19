@@ -89,15 +89,17 @@ export function detectFaceEmotionClient(video, landmarker, timestampMs) {
     const sneer = ((map.noseSneerLeft || 0) + (map.noseSneerRight || 0)) / 2
     const jawOpen = map.jawOpen || 0
 
-    let happy = Math.min(smile * 2.4, 1.0)
-    let surprise = Math.min((jawOpen * 0.8 + eyeWide * 0.8 + browUp * 0.6) / 1.6, 1.0)
-    let angry = Math.min((browDown * 2.0 + eyeSquint * 0.7) / 2.0, 1.0)
-    let sad = Math.min((frown * 2.2 + browUp * 0.8) / 2.2, 1.0)
-    let fear = Math.min((eyeWide * 1.3 + browUp * 0.9 + jawOpen * 0.4) / 2.0, 1.0)
-    let disgust = Math.min(sneer * 2.8 + browDown * 0.6, 1.0)
+    // Enhanced sensitivity gains so human micro-expressions register dynamically
+    let happy = Math.min(smile * 4.2, 1.0)
+    let surprise = Math.min((jawOpen * 1.5 + eyeWide * 1.6 + browUp * 1.0) / 1.6, 1.0)
+    let angry = Math.min((browDown * 3.6 + eyeSquint * 1.2) / 2.0, 1.0)
+    let sad = Math.min((frown * 3.8 + browUp * 1.2) / 2.0, 1.0)
+    let fear = Math.min((eyeWide * 2.0 + browUp * 1.4 + jawOpen * 0.8) / 2.0, 1.0)
+    let disgust = Math.min(sneer * 4.5 + browDown * 1.0, 1.0)
 
-    const activeSum = happy + surprise + angry + sad + fear + disgust
-    let neutral = Math.max(0.04, 1.0 - activeSum * 0.9)
+    // Neutral dynamically drops when any active emotion is expressed
+    const maxActive = Math.max(happy, surprise, angry, sad, fear, disgust)
+    let neutral = Math.max(0.04, Math.pow(Math.max(0, 1.0 - maxActive), 2.2))
 
     const raw = { happy, neutral, surprise, sad, fear, angry, disgust }
     const total = Object.values(raw).reduce((a, b) => a + b, 0) || 1
