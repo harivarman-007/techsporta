@@ -763,6 +763,18 @@ export default function App() {
                       Conf: {Math.round((analysisResult.intermediate_results.face.confidence || 0) * 100)}%
                     </p>
                   </div>
+                ) : liveFaceReading ? (
+                  <div>
+                    <div className="text-sm font-bold capitalize text-cyan-300 flex items-center gap-1.5">
+                      {liveFaceReading.emotion}
+                      <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-mono animate-pulse">
+                        LIVE
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-400 font-mono">
+                      Conf: {Math.round((liveFaceReading.confidence || 0) * 100)}%
+                    </p>
+                  </div>
                 ) : (
                   <p className="text-xs text-slate-500 italic">No face data</p>
                 )}
