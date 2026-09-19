@@ -203,9 +203,17 @@ class FaceInput:
             return obj
         d = _as_dict(obj)
         p = _parse_probs(
-            _first(d, "probs", "probabilities", "distribution", "emotion_probs", "emotions", "scores"),
+            _first(d, "probs", "probabilities", "distribution", "emotion_probs", "emotions", "scores", "all_scores", "vit_scores"),
             EMOTIONS, _FACE_ALIASES,
         )
+        if p is None and "emotion" in d:
+            emo = _FACE_ALIASES.get(str(d["emotion"]).strip().lower(), str(d["emotion"]).strip().lower())
+            if emo in EMOTIONS:
+                raw_c = float(d.get("confidence", 0.8))
+                conf_val = float(np.clip(raw_c, 0.05, 0.99))
+                rem = (1.0 - conf_val) / max(len(EMOTIONS) - 1, 1)
+                p = np.full(len(EMOTIONS), rem, dtype=np.float32)
+                p[EMOTIONS.index(emo)] = conf_val
         if p is None:
             return None
         conf = _first(d, "confidence", "conf")
@@ -228,9 +236,17 @@ class SpeechInput:
             return obj
         d = _as_dict(obj)
         p = _parse_probs(
-            _first(d, "probs", "probabilities", "distribution", "emotion_probs", "emotions", "scores"),
+            _first(d, "probs", "probabilities", "distribution", "emotion_probs", "emotions", "scores", "all_scores"),
             SPEECH_LABELS, _SPEECH_ALIASES,
         )
+        if p is None and "emotion" in d:
+            emo = _SPEECH_ALIASES.get(str(d["emotion"]).strip().lower(), str(d["emotion"]).strip().lower())
+            if emo in SPEECH_LABELS:
+                raw_c = float(d.get("confidence", 0.8))
+                conf_val = float(np.clip(raw_c, 0.05, 0.99))
+                rem = (1.0 - conf_val) / max(len(SPEECH_LABELS) - 1, 1)
+                p = np.full(len(SPEECH_LABELS), rem, dtype=np.float32)
+                p[SPEECH_LABELS.index(emo)] = conf_val
         if p is None:
             return None
         conf = _first(d, "confidence", "conf")

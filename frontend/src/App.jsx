@@ -28,6 +28,10 @@ export default function App() {
   const audioChunksRef = useRef([])
   const audioPlayerRef = useRef(null)
   const timerRef = useRef(null)
+  const bestFrameBlobRef = useRef(null)
+  const bestFrameScoreRef = useRef(0)
+  const recordingRef = useRef(false)
+  recordingRef.current = recording
 
   // Initialize camera and mic
   const startCamera = async () => {
@@ -67,6 +71,16 @@ export default function App() {
     audioChunksRef.current = []
     setRecordSeconds(0)
     setErrorMsg(null)
+    bestFrameBlobRef.current = null
+    bestFrameScoreRef.current = 0
+
+    // Capture initial frame at the start of recording
+    captureFrameBlob().then((b) => {
+      if (b && !bestFrameBlobRef.current) {
+        bestFrameBlobRef.current = b
+        bestFrameScoreRef.current = 0.5
+      }
+    })
 
     try {
       const audioTrack = mediaStreamRef.current.getAudioTracks()[0]
@@ -129,7 +143,11 @@ export default function App() {
     setErrorMsg(null)
 
     try {
-      const frameBlob = await captureFrameBlob()
+      // Use best expressive frame captured during the recording session, or capture current frame
+      let frameBlob = bestFrameBlobRef.current
+      if (!frameBlob) {
+        frameBlob = await captureFrameBlob()
+      }
       const formData = new FormData()
 
       if (frameBlob) {
@@ -283,7 +301,7 @@ export default function App() {
 
   // Live face inspection polling when camera is active (mirrors live_face_view.py)
   useEffect(() => {
-    if (!streamActive || recording || processing || !showLiveHUD) {
+    if (!streamActive || processing || !showLiveHUD) {
       return
     }
 
@@ -315,6 +333,16 @@ export default function App() {
         if (res.ok && isSubscribed) {
           const data = await res.json()
           setLiveFaceReading(data)
+
+          // If currently recording, retain the most expressive frame
+          if (recordingRef.current && blob) {
+            const isNonNeutral = data.emotion && data.emotion.toLowerCase() !== 'neutral'
+            const score = (data.confidence || 0) + (isNonNeutral ? 1.0 : 0.0)
+            if (score > bestFrameScoreRef.current || !bestFrameBlobRef.current) {
+              bestFrameBlobRef.current = blob
+              bestFrameScoreRef.current = score
+            }
+          }
         }
       } catch (err) {
         // silent fail on transient network hiccups
@@ -328,7 +356,7 @@ export default function App() {
       isSubscribed = false
       clearInterval(interval)
     }
-  }, [streamActive, recording, processing, showLiveHUD])
+  }, [streamActive, processing, showLiveHUD])
 
   const currentEmotion = analysisResult?.primary_emotion?.toLowerCase() || 'neutral'
   const emotionStyle = EMOTION_COLORS[currentEmotion] || EMOTION_COLORS.neutral
