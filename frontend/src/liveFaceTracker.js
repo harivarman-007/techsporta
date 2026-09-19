@@ -50,23 +50,37 @@ let lastVideoTimestamp = 0
 let lastValidReading = null
 let consecutiveMisses = 0
 
+// Resting baseline learner: adapts to each user's unique resting face
+let baseline = {
+  browDown: 0.14,
+  smile: 0.06,
+  frown: 0.05,
+  eyeWide: 0.05,
+  samples: 0,
+}
+
 export function resetFaceTracker() {
   lastVideoTimestamp = 0
   lastValidReading = null
   consecutiveMisses = 0
+  baseline = {
+    browDown: 0.14,
+    smile: 0.06,
+    frown: 0.05,
+    eyeWide: 0.05,
+    samples: 0,
+  }
 }
 
 export function detectFaceEmotionClient(video, landmarker, timestampMs) {
   if (!landmarker || !video || video.readyState < 2) return null
   try {
-    // MediaPipe strictly requires timestamps to be strictly increasing: ts > lastVideoTimestamp
     const ts = Math.max(Number(timestampMs) || 0, lastVideoTimestamp + 1)
     lastVideoTimestamp = ts
 
     const results = landmarker.detectForVideo(video, ts)
     if (!results || !results.faceBlendshapes || results.faceBlendshapes.length === 0) {
       consecutiveMisses++
-      // If face is momentarily lost (blink, head tilt), retain previous valid reading
       if (lastValidReading && consecutiveMisses < 12) {
         return lastValidReading
       }
@@ -80,7 +94,7 @@ export function detectFaceEmotionClient(video, landmarker, timestampMs) {
       map[categories[i].categoryName] = categories[i].score
     }
 
-    // ── 1. Action Units extraction from MediaPipe Blendshapes ──
+    // ── 1. Action Units extraction ──
     const smile = Math.max(map.mouthSmileLeft || 0, map.mouthSmileRight || 0)
     const cheekSquint = ((map.cheekSquintLeft || 0) + (map.cheekSquintRight || 0)) / 2
     const frown = Math.max(map.mouthFrownLeft || 0, map.mouthFrownRight || 0)
@@ -95,47 +109,87 @@ export function detectFaceEmotionClient(video, landmarker, timestampMs) {
     const lipRaise = Math.max(map.mouthUpperUpLeft || 0, map.mouthUpperUpRight || 0)
     const jawOpen = map.jawOpen || 0
 
-    // ── 2. Scientific Ekman FACS Heuristics with Resting Floor Subtraction ──
-    // ANGRY: AU4 (corrugator brow lowerer) + AU7 (lid tightener) + AU24 (lip press) + AU9 (nose sneer)
-    const browDownActive = Math.max(0, browLower - 0.02) * 5.2
-    const angryRaw = browDownActive * 0.90 + eyeSquint * 1.6 + mouthPress * 2.2 + sneer * 1.5
-    let angry = Math.min(Math.max(0, angryRaw), 1.0)
+    // ── 2. Automatic Resting Face Calibration (First 25 frames) ──
+    if (baseline.samples < 25) {
+      baseline.browDown = Math.max(baseline.browDown, Math.min(0.20, browLower))
+      baseline.smile = Math.max(baseline.smile, Math.min(0.12, smile))
+      baseline.frown = Math.max(baseline.frown, Math.min(0.10, frown))
+      baseline.eyeWide = Math.max(baseline.eyeWide, Math.min(0.08, eyeWide))
+      baseline.samples++
+    }
 
-    // FEAR: AU5 (wide staring eyes) + AU1 (inner brow raiser) + AU20 (mouth horizontal stretch)
-    // Differentiated from Surprise: Fear has horizontal mouth stretch / tense eyes, surprise has open dropped jaw
-    const eyeWideActive = Math.max(0, eyeWide - 0.015) * 5.0
-    const innerBrowActive = Math.max(0, browInnerUp - 0.02) * 3.6
-    const fearRaw = eyeWideActive * 0.75 + innerBrowActive * 0.45 + mouthStretch * 3.5 - Math.max(0, jawOpen - 0.20) * 1.2
-    let fear = Math.min(Math.max(0, fearRaw), 1.0)
+    // ── 3. Multi-Cue Ekman FACS Gating (prevents false positives) ──
 
-    // SURPRISE: AU26 (dropped open jaw) + AU1+2 (high arched brows) + AU5 (wide eyes)
-    let surprise = Math.min(jawOpen * 1.8 + Math.max(browInnerUp, browOuterUp) * 1.6 + eyeWideActive * 0.6, 1.0)
+    // ANGRY: Must exceed user's resting brow AND have supporting cues (squint, pressed lips, or sneer)
+    const browDownThreshold = Math.max(0.16, baseline.browDown + 0.05)
+    const browDownDelta = Math.max(0, browLower - browDownThreshold)
+    const angrySupport = (eyeSquint > 0.12 ? 0.3 : 0) + (mouthPress > 0.12 ? 0.35 : 0) + (sneer > 0.10 ? 0.35 : 0)
+    let angry = 0
+    if (browDownDelta > 0.02 && angrySupport > 0.25) {
+      angry = Math.min(browDownDelta * 4.5 + angrySupport, 1.0)
+    }
 
-    // HAPPY: AU12 (zygomaticus major smile) + AU6 (orbicularis oculi cheek raise - Duchenne marker)
-    let happy = Math.min(smile * 4.4 + cheekSquint * 1.2, 1.0)
+    // FEAR: Wide staring eyes + raised inner brow + mouth stretch (must have at least 2 cues)
+    const eyeWideThreshold = Math.max(0.08, baseline.eyeWide + 0.04)
+    const eyeWideDelta = Math.max(0, eyeWide - eyeWideThreshold)
+    const fearCues = (eyeWideDelta > 0.02 ? 1 : 0) + (browInnerUp > 0.20 ? 1 : 0) + (mouthStretch > 0.12 ? 1 : 0)
+    let fear = 0
+    if (fearCues >= 2 && jawOpen < 0.35) {
+      fear = Math.min(eyeWideDelta * 4.0 + (browInnerUp - 0.15) * 2.5 + mouthStretch * 3.0, 1.0)
+    }
 
-    // SAD: AU15 (depressor anguli oris frown) + AU1 (inner brow raise)
-    let sad = Math.min(Math.max(0, frown - 0.02) * 4.2 + innerBrowActive * 0.6, 1.0)
+    // SURPRISE: Dropped open jaw + raised arched brows
+    let surprise = 0
+    if (jawOpen > 0.18 && Math.max(browInnerUp, browOuterUp) > 0.16) {
+      surprise = Math.min(jawOpen * 2.0 + Math.max(browInnerUp, browOuterUp) * 1.5, 1.0)
+    }
 
-    // DISGUST: AU9 (levator labii superioris nose sneer) + AU10 (upper lip raiser)
-    let disgust = Math.min(sneer * 4.6 + lipRaise * 2.2, 1.0)
+    // HAPPY: Genuine smile above resting baseline
+    const smileThreshold = Math.max(0.10, baseline.smile + 0.06)
+    const smileDelta = Math.max(0, smile - smileThreshold)
+    let happy = 0
+    if (smileDelta > 0.02) {
+      happy = Math.min(smileDelta * 4.5 + cheekSquint * 1.2, 1.0)
+    }
 
-    // ── 3. Exponential Neutral Decay ──
-    // In human psychology, Neutral is the absence of active cues.
-    // When ANY emotion fires, Neutral decays exponentially: exp(-4.2 * max)
+    // SAD: Noticeable frown + inner brow contraction
+    const frownThreshold = Math.max(0.08, baseline.frown + 0.04)
+    const frownDelta = Math.max(0, frown - frownThreshold)
+    let sad = 0
+    if (frownDelta > 0.02 && browInnerUp > 0.14) {
+      sad = Math.min(frownDelta * 3.8 + (browInnerUp - 0.10) * 1.5, 1.0)
+    }
+
+    // DISGUST: Clear nose sneer
+    let disgust = 0
+    if (sneer > 0.14) {
+      disgust = Math.min(sneer * 4.2 + lipRaise * 1.8, 1.0)
+    }
+
+    // ── 4. Natural Resting Neutral ──
+    // If no active expression is being made, the face is reliably NEUTRAL.
     const maxActive = Math.max(happy, surprise, angry, sad, fear, disgust)
-    let neutral = Math.min(1.0, Math.max(0.02, Math.exp(-4.2 * maxActive)))
+    let neutral = Math.min(1.0, Math.max(0.05, Math.exp(-3.5 * maxActive)))
 
-    const raw = { happy, neutral, surprise, sad, fear, angry, disgust }
+    const raw = {
+      happy: happy * 1.0,
+      neutral: neutral * (maxActive < 0.15 ? 1.4 : 0.8),
+      surprise: surprise * 1.0,
+      sad: sad * 1.0,
+      fear: fear * 1.0,
+      angry: angry * 1.0,
+      disgust: disgust * 1.0,
+    }
+
     const total = Object.values(raw).reduce((a, b) => a + b, 0) || 1
     const all_scores = {}
     for (const [k, v] of Object.entries(raw)) {
       all_scores[k] = Math.round((v / total) * 100) / 100
     }
 
-    // Smooth with previous frame (EMA 50/50) for buttery-smooth non-flickering bars
+    // EMA smoothing (40/60) for steady, non-jumping readings
     if (lastValidReading && lastValidReading.all_scores) {
-      const alpha = 0.5
+      const alpha = 0.4
       for (const k of Object.keys(all_scores)) {
         all_scores[k] = Math.round((alpha * all_scores[k] + (1 - alpha) * (lastValidReading.all_scores[k] || 0)) * 100) / 100
       }
