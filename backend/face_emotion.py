@@ -314,7 +314,7 @@ def facs_scores(calibrated_blend: Dict[str, float], geo_delta: Dict[str, float])
     mouth_press = np.mean([bget("mouthPressLeft"), bget("mouthPressRight")])
     nose_sneer = max(bget("noseSneerLeft"), bget("noseSneerRight"))
     scores["angry"] = float(np.clip(
-        brow_lower * 1.35 + 0.35 * eye_squint + 0.25 * mouth_press + 0.35 * nose_sneer,
+        brow_lower * 2.2 + 0.45 * eye_squint + 0.35 * mouth_press + 0.35 * nose_sneer,
         0.0, 1.0,
     ))
 
@@ -335,14 +335,21 @@ def facs_scores(calibrated_blend: Dict[str, float], geo_delta: Dict[str, float])
         0.0, 1.0,
     ))
 
-    # SAD: Lip-corner depression + inner-brow raise + downward geometric mouth angle
+    # SAD: Eye visible in half (half-closed eyelids 0.20-0.82) + lip depression + inner brow
     lip_depress = max(bget("mouthFrownLeft"), bget("mouthFrownRight"))
     inner_brow = bget("browInnerUp")
     frown_geo = float(np.clip(-g.get("mouth_corner_angle", 0.0) * 6.0, 0.0, 1.0))
+    eye_blink = np.mean([bget("eyeBlinkLeft"), bget("eyeBlinkRight")])
+    is_half_eye = 0.20 <= eye_blink <= 0.82
+    half_eye_score = (1.0 - abs(eye_blink - 0.50) * 2.2) if is_half_eye else 0.0
+    sad_eye = float(np.clip(0.50 + 0.48 * half_eye_score, 0.0, 1.0)) if is_half_eye else 0.0
+
     scores["sad"] = float(np.clip(
-        0.60 * max(lip_depress, frown_geo) + 0.45 * inner_brow,
+        max(sad_eye, 0.60 * max(lip_depress, frown_geo) + 0.45 * inner_brow),
         0.0, 1.0,
     ))
+    if scores["angry"] > 0.45 and brow_lower > 0.15:
+        scores["sad"] *= 0.35
 
     # DISGUST: Nose sneer + upper-lip raise
     lip_raise = max(bget("mouthUpperUpLeft"), bget("mouthUpperUpRight"))

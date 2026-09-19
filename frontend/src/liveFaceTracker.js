@@ -107,29 +107,54 @@ export function detectFaceEmotionClient(video, landmarker, timestampMs) {
     const mouthStretch = Math.max(map.mouthStretchLeft || 0, map.mouthStretchRight || 0)
     const sneer = Math.max(map.noseSneerLeft || 0, map.noseSneerRight || 0)
     const lipRaise = Math.max(map.mouthUpperUpLeft || 0, map.mouthUpperUpRight || 0)
-    const jawOpen = map.jawOpen || 0
+    const eyeBlink = ((map.eyeBlinkLeft || 0) + (map.eyeBlinkRight || 0)) / 2
+    const eyeLookDown = ((map.eyeLookDownLeft || 0) + (map.eyeLookDownRight || 0)) / 2
 
-    // ── 2. Automatic Resting Face Calibration (First 25 frames) ──
-    if (baseline.samples < 25) {
-      baseline.browDown = Math.max(baseline.browDown, Math.min(0.20, browLower))
-      baseline.smile = Math.max(baseline.smile, Math.min(0.12, smile))
-      baseline.frown = Math.max(baseline.frown, Math.min(0.10, frown))
-      baseline.eyeWide = Math.max(baseline.eyeWide, Math.min(0.08, eyeWide))
+    // ── 2. Automatic Baseline Calibration (First 20 frames) ──
+    if (baseline.samples < 20) {
+      baseline.browDown = Math.max(baseline.browDown, Math.min(0.05, browLower))
+      baseline.smile = Math.max(baseline.smile, Math.min(0.10, smile))
+      baseline.frown = Math.max(baseline.frown, Math.min(0.08, frown))
+      baseline.eyeWide = Math.max(baseline.eyeWide, Math.min(0.06, eyeWide))
       baseline.samples++
     }
 
-    // ── 3. Multi-Cue Ekman FACS Gating (prevents false positives) ──
+    // ── 3. Emotion Detection Logic (Angry & Sad tuned) ──
 
-    // ANGRY: Must exceed user's resting brow AND have supporting cues (squint, pressed lips, or sneer)
-    const browDownThreshold = Math.max(0.16, baseline.browDown + 0.05)
-    const browDownDelta = Math.max(0, browLower - browDownThreshold)
-    const angrySupport = (eyeSquint > 0.12 ? 0.3 : 0) + (mouthPress > 0.12 ? 0.35 : 0) + (sneer > 0.10 ? 0.35 : 0)
+    // ANGRY: Reliable detection on brow furrowing (AU4), glaring/squinting (AU7), or lip press/sneer
+    const browFloor = Math.max(0.035, (baseline.browDown || 0.02) + 0.015)
+    const browFurrow = Math.max(0, browLower - browFloor)
     let angry = 0
-    if (browDownDelta > 0.02 && angrySupport > 0.25) {
-      angry = Math.min(browDownDelta * 4.5 + angrySupport, 1.0)
+    if (browFurrow > 0.01 || (browLower > 0.04 && (eyeSquint > 0.06 || mouthPress > 0.06 || sneer > 0.06))) {
+      const furrowTerm = Math.min(1.0, 0.40 + browFurrow * 5.0)
+      const supportTerm = eyeSquint * 1.8 + mouthPress * 1.5 + sneer * 1.5
+      angry = Math.min(1.0, furrowTerm + supportTerm)
     }
 
-    // FEAR: Wide staring eyes + raised inner brow + mouth stretch (must have at least 2 cues)
+    // SAD: Triggered when the eye is visible in half (half-closed / drooping eyelids: 0.20 - 0.82)
+    // or through downward mouth frown or raised inner brows
+    let sad = 0
+    const isEyeHalfVisible = (eyeBlink >= 0.20 && eyeBlink <= 0.82)
+    if (isEyeHalfVisible) {
+      // 0.35 - 0.65 eyelid closure gives 0.70 - 0.95 high Sad confidence
+      const halfEyeStrength = Math.min(1.0, 0.50 + (1.0 - Math.abs(eyeBlink - 0.50) * 2.2) * 0.48)
+      sad = Math.max(sad, halfEyeStrength)
+    }
+    if (frown > 0.03) {
+      sad = Math.max(sad, Math.min(1.0, frown * 4.0))
+    }
+    if (browInnerUp > 0.12) {
+      sad = Math.max(sad, Math.min(1.0, (browInnerUp - 0.08) * 2.8))
+    }
+    if (eyeLookDown > 0.15 && eyeBlink > 0.15) {
+      sad = Math.max(sad, Math.min(1.0, eyeLookDown * 2.2))
+    }
+    // If brow is actively furrowed in anger, anger takes priority over half-eye
+    if (angry > 0.45 && browFurrow > 0.03) {
+      sad *= 0.35
+    }
+
+    // FEAR: Wide staring eyes + raised inner brow + mouth stretch
     const eyeWideThreshold = Math.max(0.08, baseline.eyeWide + 0.04)
     const eyeWideDelta = Math.max(0, eyeWide - eyeWideThreshold)
     const fearCues = (eyeWideDelta > 0.02 ? 1 : 0) + (browInnerUp > 0.20 ? 1 : 0) + (mouthStretch > 0.12 ? 1 : 0)
@@ -145,19 +170,11 @@ export function detectFaceEmotionClient(video, landmarker, timestampMs) {
     }
 
     // HAPPY: Genuine smile above resting baseline
-    const smileThreshold = Math.max(0.10, baseline.smile + 0.06)
+    const smileThreshold = Math.max(0.10, baseline.smile + 0.05)
     const smileDelta = Math.max(0, smile - smileThreshold)
     let happy = 0
     if (smileDelta > 0.02) {
       happy = Math.min(smileDelta * 4.5 + cheekSquint * 1.2, 1.0)
-    }
-
-    // SAD: Noticeable frown + inner brow contraction
-    const frownThreshold = Math.max(0.08, baseline.frown + 0.04)
-    const frownDelta = Math.max(0, frown - frownThreshold)
-    let sad = 0
-    if (frownDelta > 0.02 && browInnerUp > 0.14) {
-      sad = Math.min(frownDelta * 3.8 + (browInnerUp - 0.10) * 1.5, 1.0)
     }
 
     // DISGUST: Clear nose sneer
