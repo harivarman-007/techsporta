@@ -150,7 +150,7 @@ def compute_geometric_features(landmarks: Sequence) -> Dict[str, float]:
     }
 
 
-def activate(raw: float, baseline: float, floor: float = 0.025, gain: float = 1.7) -> float:
+def activate(raw: float, baseline: float, floor: float = 0.018, gain: float = 2.0) -> float:
     """Calibrated activation above user's resting baseline in [0, 1]."""
     delta = raw - baseline
     if delta < floor:
@@ -302,53 +302,56 @@ def facs_scores(calibrated_blend: Dict[str, float], geo_delta: Dict[str, float])
 
     scores: Dict[str, float] = {}
 
-    # SURPRISE: brow raise + jaw drop + eye widen (>=2 of 3)
-    brow_raise = np.mean([bget("browInnerUp"), bget("browOuterUpLeft"), bget("browOuterUpRight")])
-    jaw_drop = bget("jawOpen")
-    eye_widen = np.mean([bget("eyeWideLeft"), bget("eyeWideRight")])
-    scores["surprise"] = combine_cues([brow_raise, jaw_drop, eye_widen], [0.35, 0.40, 0.25], min_active=2)
-
-    # ANGRY: corrugator brow-lower + eye squint + mouth compression + nose sneer
-    brow_lower = np.mean([bget("browDownLeft"), bget("browDownRight")])
+    # ANGRY: Corrugator brow lower is primary driver. Squint, mouth press, and nose sneer boost.
+    brow_lower = max(bget("browDownLeft"), bget("browDownRight"))
     eye_squint = np.mean([bget("eyeSquintLeft"), bget("eyeSquintRight")])
     mouth_press = np.mean([bget("mouthPressLeft"), bget("mouthPressRight")])
-    nose_sneer = np.mean([bget("noseSneerLeft"), bget("noseSneerRight")])
-    scores["angry"] = combine_cues(
-        [brow_lower, eye_squint, mouth_press, nose_sneer],
-        [0.55, 0.20, 0.15, 0.10],
-        min_active=1,
-        active_threshold=0.08,
-    )
+    nose_sneer = max(bget("noseSneerLeft"), bget("noseSneerRight"))
+    scores["angry"] = float(np.clip(
+        brow_lower * 1.35 + 0.35 * eye_squint + 0.25 * mouth_press + 0.35 * nose_sneer,
+        0.0, 1.0,
+    ))
 
-    # SAD: lip-corner depression + inner-brow raise, cross-checked with geometric mouth corner angle
-    lip_depress = np.mean([bget("mouthFrownLeft"), bget("mouthFrownRight")])
+    # FEAR vs SURPRISE:
+    eye_widen = max(bget("eyeWideLeft"), bget("eyeWideRight"))
+    brow_raise = max(bget("browInnerUp"), np.mean([bget("browOuterUpLeft"), bget("browOuterUpRight")]))
+    mouth_stretch = max(bget("mouthStretchLeft"), bget("mouthStretchRight"))
+    jaw_drop = bget("jawOpen")
+
+    # FEAR: Wide staring eyes + raised/tensed brows, without an open dropped jaw
+    fear_cue = 0.75 * eye_widen + 0.40 * brow_raise + 0.30 * mouth_stretch
+    # Suppress fear if jaw is gaping open (which is surprise)
+    scores["fear"] = float(np.clip(fear_cue - 0.35 * max(0.0, jaw_drop - 0.15), 0.0, 1.0))
+
+    # SURPRISE: Open dropped jaw + raised arched brows
+    scores["surprise"] = float(np.clip(
+        0.55 * jaw_drop + 0.35 * brow_raise + 0.25 * eye_widen,
+        0.0, 1.0,
+    ))
+
+    # SAD: Lip-corner depression + inner-brow raise + downward geometric mouth angle
+    lip_depress = max(bget("mouthFrownLeft"), bget("mouthFrownRight"))
     inner_brow = bget("browInnerUp")
-    frown_geo = float(np.clip(-g.get("mouth_corner_angle", 0.0) * 5.5, 0.0, 1.0))
-    scores["sad"] = combine_cues(
-        [lip_depress, inner_brow, frown_geo],
-        [0.45, 0.30, 0.25],
-        min_active=1,
-        active_threshold=0.06,
-    )
+    frown_geo = float(np.clip(-g.get("mouth_corner_angle", 0.0) * 6.0, 0.0, 1.0))
+    scores["sad"] = float(np.clip(
+        0.60 * max(lip_depress, frown_geo) + 0.45 * inner_brow,
+        0.0, 1.0,
+    ))
 
-    # DISGUST: nose sneer + upper-lip raise
-    nose_sneer = np.mean([bget("noseSneerLeft"), bget("noseSneerRight")])
-    lip_raise = np.mean([bget("mouthUpperUpLeft"), bget("mouthUpperUpRight")])
-    scores["disgust"] = combine_cues([nose_sneer, lip_raise], [0.60, 0.40], min_active=1, active_threshold=0.08)
+    # DISGUST: Nose sneer + upper-lip raise
+    lip_raise = max(bget("mouthUpperUpLeft"), bget("mouthUpperUpRight"))
+    scores["disgust"] = float(np.clip(0.70 * nose_sneer + 0.45 * lip_raise, 0.0, 1.0))
 
-    # HAPPY: smile + cheek raise (Duchenne marker) + mouth corner upward angle
-    smile = np.mean([bget("mouthSmileLeft"), bget("mouthSmileRight")])
+    # HAPPY: Smile + cheek raise (Duchenne marker) + upward mouth corner angle
+    smile = max(bget("mouthSmileLeft"), bget("mouthSmileRight"))
     cheek_raise = np.mean([bget("cheekSquintLeft"), bget("cheekSquintRight")])
-    smile_geo = float(np.clip(g.get("mouth_corner_angle", 0.0) * 4.0, 0.0, 1.0))
-    scores["happy"] = combine_cues([smile, cheek_raise, smile_geo], [0.50, 0.20, 0.30], min_active=1)
+    smile_geo = float(np.clip(g.get("mouth_corner_angle", 0.0) * 4.5, 0.0, 1.0))
+    scores["happy"] = float(np.clip(0.65 * max(smile, smile_geo) + 0.35 * cheek_raise, 0.0, 1.0))
 
-    # FEAR: brows up + eye widen + mouth stretch
-    mouth_stretch = np.mean([bget("mouthStretchLeft"), bget("mouthStretchRight")])
-    scores["fear"] = 0.7 * combine_cues([brow_raise, eye_widen, mouth_stretch], [0.40, 0.35, 0.25], min_active=2)
-
-    # NEUTRAL: inverse of the strongest active emotion
+    # NEUTRAL: Exponential decay as soon as any expression activates
+    # Drops sharply from 1.0 -> 0.36 at 0.25 activation, allowing natural expressions to cleanly lead
     strongest_other = max(scores.values()) if scores else 0.0
-    scores["neutral"] = float(np.clip(1.0 - strongest_other * 1.05, 0.0, 1.0))
+    scores["neutral"] = float(np.clip(np.exp(-4.2 * strongest_other), 0.0, 1.0))
 
     for e in EMOTIONS:
         scores.setdefault(e, 0.0)
@@ -387,8 +390,8 @@ def fuse(geometric_scores: Dict[str, float], vit_scores: Dict[str, float],
 class TemporalSmoother:
     """EMA smoothing + sliding-window hysteresis to prevent flickering."""
 
-    def __init__(self, ema_alpha: float = 0.35, window: int = 8,
-                 switch_margin: float = 0.08, min_hold_frames: int = 5):
+    def __init__(self, ema_alpha: float = 0.45, window: int = 5,
+                 switch_margin: float = 0.04, min_hold_frames: int = 3):
         self.ema_alpha = ema_alpha
         self.window = window
         self.switch_margin = switch_margin
@@ -474,8 +477,8 @@ class EmotionRecognizer:
     def __init__(self, calibration_path: str | Path = None,
                  calibration_frames: int = 60,
                  fusion_cfg: Optional[FusionConfig] = None,
-                 ema_alpha: float = 0.35, window: int = 8,
-                 switch_margin: float = 0.08, min_hold_frames: int = 5):
+                 ema_alpha: float = 0.45, window: int = 5,
+                 switch_margin: float = 0.04, min_hold_frames: int = 3):
         if calibration_path is None:
             calibration_path = Path(__file__).parent / "calibration_profile.json"
         self.calibration_path = Path(calibration_path)
