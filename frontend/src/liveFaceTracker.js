@@ -107,6 +107,7 @@ export function detectFaceEmotionClient(video, landmarker, timestampMs) {
     const mouthStretch = Math.max(map.mouthStretchLeft || 0, map.mouthStretchRight || 0)
     const sneer = Math.max(map.noseSneerLeft || 0, map.noseSneerRight || 0)
     const lipRaise = Math.max(map.mouthUpperUpLeft || 0, map.mouthUpperUpRight || 0)
+    const jawOpen = map.jawOpen || 0
     const eyeBlink = ((map.eyeBlinkLeft || 0) + (map.eyeBlinkRight || 0)) / 2
     const eyeLookDown = ((map.eyeLookDownLeft || 0) + (map.eyeLookDownRight || 0)) / 2
 
@@ -223,6 +224,6 @@ export function detectFaceEmotionClient(video, landmarker, timestampMs) {
     return reading
   } catch (err) {
     console.warn('Face tracker tick error:', err)
-    return lastValidReading
+    return null
   }
 }
