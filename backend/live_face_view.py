@@ -347,7 +347,7 @@ class LiveFaceViewer:
             tx = tx[:39] + "..."
         cv2.putText(frame, f'SPEECH: "{tx}"', (240, h - 30), cv2.FONT_HERSHEY_DUPLEX, 0.5, COLOR_TEXT_WHITE, 1, cv2.LINE_AA)
 
-        hint = "[C] Calibrate Neutral (2s)  [M] Mesh  [B] Box  [S] Spectrum  [Q] Exit"
+        hint = "[C] Calibrate (2s)  [R] Reset  [M] Mesh  [B] Box  [S] Spectrum  [Q] Exit"
         cv2.putText(frame, hint, (20, h - 10), cv2.FONT_HERSHEY_DUPLEX, 0.38, (140, 148, 160), 1, cv2.LINE_AA)
 
     def run(self):
@@ -356,6 +356,7 @@ class LiveFaceViewer:
         print("=" * 65, flush=True)
         print("  • Controls:", flush=True)
         print("      [C] Calibrate resting face baseline (hold neutral for ~2s)", flush=True)
+        print("      [R] Reset baseline to defaults (when switching users)", flush=True)
         print("      [M] Toggle Face Mesh wireframe", flush=True)
         print("      [B] Toggle Bounding Box & Badge", flush=True)
         print("      [S] Toggle 7-Emotion Spectrum panel", flush=True)
@@ -452,6 +453,9 @@ class LiveFaceViewer:
                 elif key in (ord('c'), ord('C')):
                     self.recognizer.start_calibration()
                     self.notify("Calibrating neutral baseline...")
+                elif key in (ord('r'), ord('R')):
+                    self.recognizer.reset_calibration()
+                    self.notify("Baseline reset to defaults [OK]")
                 elif key in (ord('s'), ord('S')):
                     self.show_spectrum = not self.show_spectrum
                 elif key in (ord('m'), ord('M')):

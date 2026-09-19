@@ -150,7 +150,7 @@ def compute_geometric_features(landmarks: Sequence) -> Dict[str, float]:
     }
 
 
-def activate(raw: float, baseline: float, floor: float = 0.04, gain: float = 1.4) -> float:
+def activate(raw: float, baseline: float, floor: float = 0.025, gain: float = 1.7) -> float:
     """Calibrated activation above user's resting baseline in [0, 1]."""
     delta = raw - baseline
     if delta < floor:
@@ -181,12 +181,53 @@ def normalize(scores: Dict[str, float]) -> Dict[str, float]:
 
 # ── Calibration Profile & Neutral Calibrator ─────────────────────────────────
 
+# Maximum realistic baselines for a relaxed resting face.
+# Prevents squinting/looking down at the monitor from corrupting angry/sad thresholds.
+MAX_NEUTRAL_BASELINES: Dict[str, float] = {
+    "browDownLeft": 0.18,
+    "browDownRight": 0.18,
+    "eyeSquintLeft": 0.22,
+    "eyeSquintRight": 0.22,
+    "mouthFrownLeft": 0.08,
+    "mouthFrownRight": 0.08,
+    "mouthPressLeft": 0.12,
+    "mouthPressRight": 0.12,
+    "mouthSmileLeft": 0.12,
+    "mouthSmileRight": 0.12,
+    "noseSneerLeft": 0.06,
+    "noseSneerRight": 0.06,
+}
+
+
 @dataclass
 class CalibrationProfile:
     blendshape_baseline: Dict[str, float] = field(default_factory=dict)
     geometric_baseline: Dict[str, float] = field(default_factory=dict)
     n_samples: int = 0
     created_at: float = 0.0
+
+    def sanitize(self) -> None:
+        """Clamp any outlier baselines that prevent negative emotions from firing."""
+        for k, max_val in MAX_NEUTRAL_BASELINES.items():
+            if k in self.blendshape_baseline and self.blendshape_baseline[k] > max_val:
+                self.blendshape_baseline[k] = max_val
+
+    @classmethod
+    def default_profile(cls) -> "CalibrationProfile":
+        blend = {name: 0.02 for name in BLENDSHAPE_NAMES}
+        blend["browDownLeft"] = 0.04
+        blend["browDownRight"] = 0.04
+        blend["eyeSquintLeft"] = 0.06
+        blend["eyeSquintRight"] = 0.06
+        blend["mouthFrownLeft"] = 0.02
+        blend["mouthFrownRight"] = 0.02
+        geo = {
+            "mouth_corner_angle": 0.0,
+            "eye_aperture_left": 0.08,
+            "eye_aperture_right": 0.08,
+            "jaw_opening": 0.01,
+        }
+        return cls(blendshape_baseline=blend, geometric_baseline=geo, n_samples=60, created_at=time.time())
 
     def save(self, path: str | Path) -> None:
         Path(path).write_text(json.dumps(asdict(self), indent=2))
@@ -228,7 +269,11 @@ class NeutralCalibrator:
         blend_baseline = {}
         for k in blend_keys:
             vals = np.array([s.get(k, 0.0) for s in self._blend_samples])
-            blend_baseline[k] = float(vals.mean())
+            raw_mean = float(vals.mean())
+            if k in MAX_NEUTRAL_BASELINES and raw_mean > MAX_NEUTRAL_BASELINES[k]:
+                warnings.append(f"baseline '{k}' clamped from {raw_mean:.3f} to {MAX_NEUTRAL_BASELINES[k]:.3f}")
+                raw_mean = MAX_NEUTRAL_BASELINES[k]
+            blend_baseline[k] = raw_mean
             if vals.std() > self.jitter_std_warn:
                 warnings.append(f"blendshape '{k}' unstable during calibration (std={vals.std():.3f})")
 
@@ -263,22 +308,33 @@ def facs_scores(calibrated_blend: Dict[str, float], geo_delta: Dict[str, float])
     eye_widen = np.mean([bget("eyeWideLeft"), bget("eyeWideRight")])
     scores["surprise"] = combine_cues([brow_raise, jaw_drop, eye_widen], [0.35, 0.40, 0.25], min_active=2)
 
-    # ANGRY: corrugator brow-lower + eye squint + mouth compression
+    # ANGRY: corrugator brow-lower + eye squint + mouth compression + nose sneer
     brow_lower = np.mean([bget("browDownLeft"), bget("browDownRight")])
     eye_squint = np.mean([bget("eyeSquintLeft"), bget("eyeSquintRight")])
     mouth_press = np.mean([bget("mouthPressLeft"), bget("mouthPressRight")])
-    scores["angry"] = combine_cues([brow_lower, eye_squint, mouth_press], [0.50, 0.25, 0.25], min_active=2)
+    nose_sneer = np.mean([bget("noseSneerLeft"), bget("noseSneerRight")])
+    scores["angry"] = combine_cues(
+        [brow_lower, eye_squint, mouth_press, nose_sneer],
+        [0.55, 0.20, 0.15, 0.10],
+        min_active=1,
+        active_threshold=0.08,
+    )
 
     # SAD: lip-corner depression + inner-brow raise, cross-checked with geometric mouth corner angle
     lip_depress = np.mean([bget("mouthFrownLeft"), bget("mouthFrownRight")])
     inner_brow = bget("browInnerUp")
-    frown_geo = float(np.clip(-g.get("mouth_corner_angle", 0.0) * 4.0, 0.0, 1.0))
-    scores["sad"] = combine_cues([lip_depress, inner_brow, frown_geo], [0.45, 0.25, 0.30], min_active=2)
+    frown_geo = float(np.clip(-g.get("mouth_corner_angle", 0.0) * 5.5, 0.0, 1.0))
+    scores["sad"] = combine_cues(
+        [lip_depress, inner_brow, frown_geo],
+        [0.45, 0.30, 0.25],
+        min_active=1,
+        active_threshold=0.06,
+    )
 
     # DISGUST: nose sneer + upper-lip raise
     nose_sneer = np.mean([bget("noseSneerLeft"), bget("noseSneerRight")])
     lip_raise = np.mean([bget("mouthUpperUpLeft"), bget("mouthUpperUpRight")])
-    scores["disgust"] = combine_cues([nose_sneer, lip_raise], [0.60, 0.40], min_active=2)
+    scores["disgust"] = combine_cues([nose_sneer, lip_raise], [0.60, 0.40], min_active=1, active_threshold=0.08)
 
     # HAPPY: smile + cheek raise (Duchenne marker) + mouth corner upward angle
     smile = np.mean([bget("mouthSmileLeft"), bget("mouthSmileRight")])
@@ -292,7 +348,7 @@ def facs_scores(calibrated_blend: Dict[str, float], geo_delta: Dict[str, float])
 
     # NEUTRAL: inverse of the strongest active emotion
     strongest_other = max(scores.values()) if scores else 0.0
-    scores["neutral"] = float(np.clip(1.0 - strongest_other * 1.15, 0.0, 1.0))
+    scores["neutral"] = float(np.clip(1.0 - strongest_other * 1.05, 0.0, 1.0))
 
     for e in EMOTIONS:
         scores.setdefault(e, 0.0)
@@ -303,12 +359,12 @@ def facs_scores(calibrated_blend: Dict[str, float], geo_delta: Dict[str, float])
 
 @dataclass
 class FusionConfig:
-    # Down-weight ViT on classes it over-fires on under domain shift (angry/sad)
+    # Balanced weights so ViT angry/sad predictions are not artificially suppressed
     vit_trust: Dict[str, float] = field(default_factory=lambda: {
-        "angry": 0.55, "sad": 0.55, "disgust": 0.75, "fear": 0.80,
-        "happy": 0.90, "neutral": 0.80, "surprise": 0.85,
+        "angry": 0.88, "sad": 0.88, "disgust": 0.80, "fear": 0.80,
+        "happy": 0.88, "neutral": 0.70, "surprise": 0.85,
     })
-    geometric_boost: float = 1.8
+    geometric_boost: float = 1.6
     alpha_min: float = 0.20
     alpha_max: float = 0.85
 
@@ -433,8 +489,14 @@ class EmotionRecognizer:
         if self.calibration_path.exists():
             try:
                 self.profile = CalibrationProfile.load(self.calibration_path)
+                self.profile.sanitize()
+                self.profile.save(self.calibration_path)
             except Exception:
-                self.profile = None
+                self.profile = CalibrationProfile.default_profile()
+                self.profile.save(self.calibration_path)
+        else:
+            self.profile = CalibrationProfile.default_profile()
+            self.profile.save(self.calibration_path)
 
     @property
     def is_calibrated(self) -> bool:
@@ -445,6 +507,13 @@ class EmotionRecognizer:
 
     def cancel_calibration(self) -> None:
         self.calibrator = None
+
+    def reset_calibration(self) -> None:
+        """Reset calibration profile back to clean, balanced neutral baseline."""
+        self.profile = CalibrationProfile.default_profile()
+        self.profile.save(self.calibration_path)
+        self.calibrator = None
+        self.smoother.reset()
 
     def process_frame(self, landmarks: Sequence, face_blendshapes,
                       vit_scores: Dict[str, float]) -> EmotionResult:
