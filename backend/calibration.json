@@ -1,0 +1,21 @@
+{
+  "emotion_multipliers": {
+    "surprise": 1.45,
+    "angry": 1.50,
+    "disgust": 1.60,
+    "sad": 1.10,
+    "fear": 1.35,
+    "happy": 1.25,
+    "neutral": 0.80
+  },
+  "blendshape_weights": {
+    "surprise": 0.35,
+    "angry": 0.35,
+    "disgust": 0.40,
+    "happy": 0.30,
+    "sad": 0.25,
+    "fear": 0.25
+  },
+  "smoothing_alpha": 0.4,
+  "confidence_threshold": 0.20
+}

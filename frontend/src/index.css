@@ -1,0 +1,38 @@
+@import "tailwindcss";
+
+/* ── EmpathAI Design System ── */
+:root {
+  --color-bg: #0d0e14;
+  --color-surface: #13151f;
+  --color-surface-2: #1a1d2e;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-accent: #7c3aed;
+  --color-accent-light: #a78bfa;
+  --color-accent-glow: rgba(124, 58, 237, 0.35);
+  --color-text: #e2e8f0;
+  --color-muted: #64748b;
+  --color-success: #10b981;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  width: 100%;
+}
+
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}

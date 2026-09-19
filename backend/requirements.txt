@@ -1,0 +1,42 @@
+# ──────────────────────────────────────────────
+#  EmpathAI — Backend dependencies
+#  Hardware target: RTX 3050, 4GB VRAM
+#  Python 3.13 (resolved at install time)
+# ──────────────────────────────────────────────
+
+# Web framework
+fastapi>=0.141.0
+uvicorn[standard]>=0.29.0
+
+# Env / config
+python-dotenv>=1.0.0
+python-multipart>=0.0.9  # required by FastAPI for UploadFile / File(...) endpoints
+
+# ── Vision ───────────────────────────────────
+mediapipe>=1.0.1          # 0.10.x not available for py313
+opencv-python-headless>=4.9.0
+
+# ── Audio / Speech ───────────────────────────
+# torchaudio installed alongside torch (same version, CUDA index)
+webrtcvad-wheels>=2.0.14  # cross-platform wheel; replaces webrtcvad on Windows
+faster-whisper>=1.0.3
+soundfile>=0.12.1
+sounddevice>=0.4.6
+scipy>=1.11.0
+
+# ── Transformers / ML ────────────────────────
+# torch + torchvision + torchaudio installed separately:
+#   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+transformers>=4.45.0      # 4.41.x requires tokenizers<0.20 which has no py313 wheel
+accelerate>=0.34.0
+
+# ── Gemini / LLM ─────────────────────────────
+google-generativeai>=0.7.0
+
+# ── TTS ──────────────────────────────────────
+gTTS>=2.5.0
+pyttsx3>=2.90
+
+# ── Utilities ────────────────────────────────
+numpy>=1.26.0
+Pillow>=10.0.0
