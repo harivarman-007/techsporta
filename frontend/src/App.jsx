@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import './index.css'
-import { getFaceLandmarker, detectFaceEmotionClient } from './liveFaceTracker'
+import { getFaceLandmarker, detectFaceEmotionClient, resetFaceTracker } from './liveFaceTracker'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
@@ -95,6 +95,7 @@ export default function App() {
     if (videoRef.current) videoRef.current.srcObject = null
     setStreamActive(false)
     setLiveFaceReading(null)
+    resetFaceTracker()
   }
 
   const captureFrameBlob = async () => {

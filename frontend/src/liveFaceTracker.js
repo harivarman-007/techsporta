@@ -46,14 +46,34 @@ export async function getFaceLandmarker() {
   return initPromise
 }
 
+let lastVideoTimestamp = 0
+let lastValidReading = null
+let consecutiveMisses = 0
+
+export function resetFaceTracker() {
+  lastVideoTimestamp = 0
+  lastValidReading = null
+  consecutiveMisses = 0
+}
+
 export function detectFaceEmotionClient(video, landmarker, timestampMs) {
   if (!landmarker || !video || video.readyState < 2) return null
   try {
-    const results = landmarker.detectForVideo(video, timestampMs)
+    // MediaPipe strictly requires timestamps to be strictly increasing: ts > lastVideoTimestamp
+    const ts = Math.max(Number(timestampMs) || 0, lastVideoTimestamp + 1)
+    lastVideoTimestamp = ts
+
+    const results = landmarker.detectForVideo(video, ts)
     if (!results || !results.faceBlendshapes || results.faceBlendshapes.length === 0) {
+      consecutiveMisses++
+      // If face is momentarily lost (blink, head tilt), retain previous valid reading
+      if (lastValidReading && consecutiveMisses < 12) {
+        return lastValidReading
+      }
       return null
     }
 
+    consecutiveMisses = 0
     const categories = results.faceBlendshapes[0].categories
     const map = {}
     for (let i = 0; i < categories.length; i++) {
@@ -77,7 +97,7 @@ export function detectFaceEmotionClient(video, landmarker, timestampMs) {
     let disgust = Math.min(sneer * 2.8 + browDown * 0.6, 1.0)
 
     const activeSum = happy + surprise + angry + sad + fear + disgust
-    let neutral = Math.max(0.05, 1.0 - activeSum * 0.9)
+    let neutral = Math.max(0.04, 1.0 - activeSum * 0.9)
 
     const raw = { happy, neutral, surprise, sad, fear, angry, disgust }
     const total = Object.values(raw).reduce((a, b) => a + b, 0) || 1
@@ -86,14 +106,25 @@ export function detectFaceEmotionClient(video, landmarker, timestampMs) {
       all_scores[k] = Math.round((v / total) * 100) / 100
     }
 
+    // Smooth with previous frame (EMA 50/50) for buttery-smooth non-flickering bars
+    if (lastValidReading && lastValidReading.all_scores) {
+      const alpha = 0.5
+      for (const k of Object.keys(all_scores)) {
+        all_scores[k] = Math.round((alpha * all_scores[k] + (1 - alpha) * (lastValidReading.all_scores[k] || 0)) * 100) / 100
+      }
+    }
+
     const sorted = Object.entries(all_scores).sort((a, b) => b[1] - a[1])
-    return {
+    const reading = {
       emotion: sorted[0][0],
       confidence: sorted[0][1],
       all_scores,
       source: 'client-gpu-instant',
     }
+    lastValidReading = reading
+    return reading
   } catch (err) {
-    return null
+    console.warn('Face tracker tick error:', err)
+    return lastValidReading
   }
 }
