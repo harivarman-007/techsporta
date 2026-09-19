@@ -24,7 +24,11 @@ from typing import Dict, Optional, Tuple, Union
 import numpy as np
 import torch
 from transformers import AutoFeatureExtractor, AutoModelForAudioClassification
-from vram_logger import log_vram
+try:
+    from vram_logger import log_vram
+except ImportError:
+    def log_vram(label: str = ""):
+        return None
 
 logger = logging.getLogger(__name__)
 

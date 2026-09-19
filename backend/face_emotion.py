@@ -27,7 +27,11 @@ import numpy as np
 from PIL import Image
 import torch
 from transformers import pipeline as hf_pipeline
-from vram_logger import log_vram
+try:
+    from vram_logger import log_vram
+except ImportError:
+    def log_vram(label: str = ""):
+        return None
 
 logger = logging.getLogger(__name__)
 

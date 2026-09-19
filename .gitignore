@@ -46,7 +46,6 @@ backend/test_phase1.py
 backend/test_phase7.py
 backend/test_stream.py
 backend/compare_fusion.py
-backend/vram_logger.py
 frontend/README.md
 frontend/src/App.css
 frontend/src/assets/
