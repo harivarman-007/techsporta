@@ -80,26 +80,51 @@ export function detectFaceEmotionClient(video, landmarker, timestampMs) {
       map[categories[i].categoryName] = categories[i].score
     }
 
-    const smile = ((map.mouthSmileLeft || 0) + (map.mouthSmileRight || 0)) / 2
-    const frown = ((map.mouthFrownLeft || 0) + (map.mouthFrownRight || 0)) / 2
-    const browDown = ((map.browDownLeft || 0) + (map.browDownRight || 0)) / 2
-    const browUp = map.browInnerUp || 0
-    const eyeWide = ((map.eyeWideLeft || 0) + (map.eyeWideRight || 0)) / 2
+    // ── 1. Action Units extraction from MediaPipe Blendshapes ──
+    const smile = Math.max(map.mouthSmileLeft || 0, map.mouthSmileRight || 0)
+    const cheekSquint = ((map.cheekSquintLeft || 0) + (map.cheekSquintRight || 0)) / 2
+    const frown = Math.max(map.mouthFrownLeft || 0, map.mouthFrownRight || 0)
+    const browLower = Math.max(map.browDownLeft || 0, map.browDownRight || 0)
+    const browInnerUp = map.browInnerUp || 0
+    const browOuterUp = ((map.browOuterUpLeft || 0) + (map.browOuterUpRight || 0)) / 2
+    const eyeWide = Math.max(map.eyeWideLeft || 0, map.eyeWideRight || 0)
     const eyeSquint = ((map.eyeSquintLeft || 0) + (map.eyeSquintRight || 0)) / 2
-    const sneer = ((map.noseSneerLeft || 0) + (map.noseSneerRight || 0)) / 2
+    const mouthPress = ((map.mouthPressLeft || 0) + (map.mouthPressRight || 0)) / 2
+    const mouthStretch = Math.max(map.mouthStretchLeft || 0, map.mouthStretchRight || 0)
+    const sneer = Math.max(map.noseSneerLeft || 0, map.noseSneerRight || 0)
+    const lipRaise = Math.max(map.mouthUpperUpLeft || 0, map.mouthUpperUpRight || 0)
     const jawOpen = map.jawOpen || 0
 
-    // Enhanced sensitivity gains so human micro-expressions register dynamically
-    let happy = Math.min(smile * 4.2, 1.0)
-    let surprise = Math.min((jawOpen * 1.5 + eyeWide * 1.6 + browUp * 1.0) / 1.6, 1.0)
-    let angry = Math.min((browDown * 3.6 + eyeSquint * 1.2) / 2.0, 1.0)
-    let sad = Math.min((frown * 3.8 + browUp * 1.2) / 2.0, 1.0)
-    let fear = Math.min((eyeWide * 2.0 + browUp * 1.4 + jawOpen * 0.8) / 2.0, 1.0)
-    let disgust = Math.min(sneer * 4.5 + browDown * 1.0, 1.0)
+    // ── 2. Scientific Ekman FACS Heuristics with Resting Floor Subtraction ──
+    // ANGRY: AU4 (corrugator brow lowerer) + AU7 (lid tightener) + AU24 (lip press) + AU9 (nose sneer)
+    const browDownActive = Math.max(0, browLower - 0.02) * 5.2
+    const angryRaw = browDownActive * 0.90 + eyeSquint * 1.6 + mouthPress * 2.2 + sneer * 1.5
+    let angry = Math.min(Math.max(0, angryRaw), 1.0)
 
-    // Neutral dynamically drops when any active emotion is expressed
+    // FEAR: AU5 (wide staring eyes) + AU1 (inner brow raiser) + AU20 (mouth horizontal stretch)
+    // Differentiated from Surprise: Fear has horizontal mouth stretch / tense eyes, surprise has open dropped jaw
+    const eyeWideActive = Math.max(0, eyeWide - 0.015) * 5.0
+    const innerBrowActive = Math.max(0, browInnerUp - 0.02) * 3.6
+    const fearRaw = eyeWideActive * 0.75 + innerBrowActive * 0.45 + mouthStretch * 3.5 - Math.max(0, jawOpen - 0.20) * 1.2
+    let fear = Math.min(Math.max(0, fearRaw), 1.0)
+
+    // SURPRISE: AU26 (dropped open jaw) + AU1+2 (high arched brows) + AU5 (wide eyes)
+    let surprise = Math.min(jawOpen * 1.8 + Math.max(browInnerUp, browOuterUp) * 1.6 + eyeWideActive * 0.6, 1.0)
+
+    // HAPPY: AU12 (zygomaticus major smile) + AU6 (orbicularis oculi cheek raise - Duchenne marker)
+    let happy = Math.min(smile * 4.4 + cheekSquint * 1.2, 1.0)
+
+    // SAD: AU15 (depressor anguli oris frown) + AU1 (inner brow raise)
+    let sad = Math.min(Math.max(0, frown - 0.02) * 4.2 + innerBrowActive * 0.6, 1.0)
+
+    // DISGUST: AU9 (levator labii superioris nose sneer) + AU10 (upper lip raiser)
+    let disgust = Math.min(sneer * 4.6 + lipRaise * 2.2, 1.0)
+
+    // ── 3. Exponential Neutral Decay ──
+    // In human psychology, Neutral is the absence of active cues.
+    // When ANY emotion fires, Neutral decays exponentially: exp(-4.2 * max)
     const maxActive = Math.max(happy, surprise, angry, sad, fear, disgust)
-    let neutral = Math.max(0.04, Math.pow(Math.max(0, 1.0 - maxActive), 2.2))
+    let neutral = Math.min(1.0, Math.max(0.02, Math.exp(-4.2 * maxActive)))
 
     const raw = { happy, neutral, surprise, sad, fear, angry, disgust }
     const total = Object.values(raw).reduce((a, b) => a + b, 0) || 1
