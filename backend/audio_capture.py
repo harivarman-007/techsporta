@@ -12,11 +12,24 @@ Fixes applied:
    hard 10s maximum cap to prevent runaway recordings.
 3. Provides both object-oriented `AudioCapture` class and backward-compatible
    `capture_speech_segments` generator for FastAPI/main.py.
+4. STOP-EVENT LIFECYCLE FIX (this patch): AudioCapture now accepts an
+   *external* stop_event instead of always creating its own private one.
+   Previously, capture_speech_segments() accepted a stop_event parameter but
+   never wired it into the AudioCapture instance it created -- AudioCapture
+   looped on its own internal _stop_event, a completely separate Event
+   object, so the caller's stop signal was only checked *after* a new
+   utterance was yielded, and the microphone stream could stay open
+   indefinitely past a WebSocket disconnect. On the next connection, a
+   second AudioCapture() would open a second stream on the same device,
+   and the two would contend for the mic -- corrupting captured audio for
+   both (manifesting as Whisper hallucination loops and wrong speech-emotion
+   labels in live /stream sessions).
 """
 from __future__ import annotations
 
 import collections
 import io
+import logging
 import queue
 import threading
 import wave
@@ -33,6 +46,8 @@ except ImportError as e:
         "webrtcvad is required. Install via: pip install webrtcvad-wheels"
     ) from e
 
+
+logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
 SAMPLE_WIDTH_BYTES = 2  # int16
@@ -154,10 +169,18 @@ class AudioCapture:
     """
     Owns the sounddevice InputStream and worker thread that re-chunks the
     hardware blocks into 20ms VAD frames.
+
+    PATCH: `stop_event` can now be supplied externally (e.g. by a WebSocket
+    handler in main.py) so that a single Event is the one source of truth
+    for "this session is over." Previously AudioCapture always created its
+    own private Event, which meant an external caller's stop signal never
+    actually reached the mic stream in time -- the stream could linger
+    after a client disconnected, and a second AudioCapture() on the next
+    connection would then contend with it for the same physical device.
     """
 
     def __init__(self, config: VADConfig = VADConfig(), device: Optional[object] = None,
-                 blocksize: int = DEFAULT_BLOCKSIZE):
+                 blocksize: int = DEFAULT_BLOCKSIZE, stop_event: Optional[threading.Event] = None):
         self.segmenter = UtteranceSegmenter(config)
         self.device = device
         self.blocksize = blocksize
@@ -165,7 +188,11 @@ class AudioCapture:
         self._utterance_queue: "queue.Queue[bytes]" = queue.Queue()
         self._stream: Optional[sd.InputStream] = None
         self._worker_thread: Optional[threading.Thread] = None
-        self._stop_event = threading.Event()
+        # Use the externally-supplied stop_event if given, so callers (like
+        # the /stream WebSocket handler) and this capture instance always
+        # agree on when the session has ended. Only fall back to a private
+        # Event when AudioCapture is used standalone with no caller-owned one.
+        self._stop_event = stop_event if stop_event is not None else threading.Event()
         self._leftover = b""
 
     def _callback(self, indata, frames, time_info, status):
@@ -194,7 +221,11 @@ class AudioCapture:
             self._utterance_queue.put(tail)
 
     def start(self) -> None:
-        self._stop_event.clear()
+        logger.info(
+            "AudioCapture starting (device=%s, blocksize=%d)",
+            self.device if self.device is not None else "default",
+            self.blocksize,
+        )
         self._stream = sd.InputStream(
             samplerate=SAMPLE_RATE, channels=CHANNELS, dtype="int16",
             blocksize=self.blocksize, device=self.device, callback=self._callback,
@@ -209,8 +240,9 @@ class AudioCapture:
             try:
                 self._stream.stop()
                 self._stream.close()
+                logger.info("AudioCapture stream closed.")
             except Exception:
-                pass
+                logger.exception("Error closing AudioCapture stream")
             self._stream = None
         if self._worker_thread is not None:
             self._worker_thread.join(timeout=2)
@@ -242,14 +274,21 @@ def capture_speech_segments(stop_event: Optional[threading.Event] = None) -> Gen
     """
     Drop-in replacement for the legacy capture_speech_segments generator.
     Spawns AudioCapture with safe 100ms hardware buffering and yields WAV bytes.
+
+    PATCH: stop_event is now passed straight into AudioCapture so both share
+    the exact same Event -- there is no longer a window where the caller's
+    stop signal is set but AudioCapture's internal loop hasn't noticed yet.
+    The stop check also now happens immediately after yielding, not only on
+    the next loop iteration, so cleanup (capture.stop() in `finally`) runs
+    as soon as possible after the caller asks to stop.
     """
-    capture = AudioCapture()
+    capture = AudioCapture(stop_event=stop_event)
     capture.start()
     try:
         for utt in capture.utterances():
+            yield utt
             if stop_event and stop_event.is_set():
                 break
-            yield utt
     finally:
         capture.stop()
 
@@ -309,5 +348,32 @@ if __name__ == "__main__":
     print(f"Test 3 (flickering non-speech doesn't false-trigger): {len(results3)} utterances -- "
           f"{'PASS' if len(results3) == 0 else 'CHECK'}")
 
-    print("All audio_capture self-tests completed.")
+    # --- Test 4 (new): capture_speech_segments honors an externally-set stop_event ---
+    class _FakeStream:
+        def start(self): pass
+        def stop(self): pass
+        def close(self): pass
 
+    ext_stop = threading.Event()
+    fake_capture_calls = {"stopped": False}
+
+    class _FakeAudioCapture(AudioCapture):
+        def start(self):
+            self._stream = _FakeStream()
+            # no real worker thread needed for this test
+        def utterances(self):
+            yield b"utt-1"
+            yield b"utt-2"
+        def stop(self):
+            fake_capture_calls["stopped"] = True
+            self._stream = None
+
+    import unittest.mock as mock
+    with mock.patch(f"{__name__}.AudioCapture", _FakeAudioCapture):
+        ext_stop.set()  # simulate: caller already wants to stop before first utterance
+        out = list(capture_speech_segments(stop_event=ext_stop))
+    assert out == [b"utt-1"], f"expected to stop after first utterance once stop_event is set, got {out}"
+    assert fake_capture_calls["stopped"] is True, "capture.stop() must be called in finally"
+    print("Test 4 (capture_speech_segments honors external stop_event, calls capture.stop()): PASS")
+
+    print("All audio_capture self-tests completed.")
