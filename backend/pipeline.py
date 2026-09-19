@@ -92,6 +92,7 @@ def analyze_multimodal(
     mode: str = "fast",
     generate_tts: bool = True,
     force_offline_tts: bool = False,
+    face_hint: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Executes the complete multimodal pipeline with fine-grained latency tracking.
@@ -128,6 +129,20 @@ def analyze_multimodal(
             logger.exception("Face emotion failed")
             errors.append(f"Face emotion error: {exc}")
             latencies["face"] = round((time.perf_counter() - t0) * 1e3, 2)
+
+    # Prioritize verified client live face tracking whenever active expression is detected
+    if face_hint and isinstance(face_hint, dict) and face_hint.get("emotion"):
+        hint_emo = face_hint.get("emotion")
+        if hint_emo != "neutral" or face_res is None or face_res.get("emotion") == "neutral":
+            logger.info("Prioritizing verified client face emotion: %s (%s)", hint_emo, face_hint.get("confidence"))
+            scores_map = face_hint.get("all_scores") or face_hint.get("probs") or {}
+            face_res = {
+                "emotion": hint_emo,
+                "confidence": float(face_hint.get("confidence", 0.9)),
+                "all_scores": scores_map,
+                "probs": scores_map,
+                "source": "client_live_tracker",
+            }
 
     # 2. Speech Emotion Inference
     speech_res = None

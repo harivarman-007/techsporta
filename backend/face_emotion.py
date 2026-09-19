@@ -599,7 +599,7 @@ def predict_face_emotion(image_bytes: bytes, use_facs: Optional[bool] = None) ->
       are gated behind `use_facs=True` (or env ENABLE_FACS=1), disabled by default.
     """
     if use_facs is None:
-        use_facs = os.getenv("ENABLE_FACS", "false").lower() in ("true", "1", "yes")
+        use_facs = os.getenv("ENABLE_FACS", "true").lower() in ("true", "1", "yes")
 
     nparr = np.frombuffer(image_bytes, np.uint8)
     img_bgr = cv2.imdecode(nparr, cv2.IMREAD_COLOR)

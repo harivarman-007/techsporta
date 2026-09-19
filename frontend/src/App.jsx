@@ -84,6 +84,7 @@ export default function App() {
   const timerRef = useRef(null)
   const bestFrameBlobRef = useRef(null)
   const bestFrameScoreRef = useRef(0)
+  const bestClientReadingRef = useRef(null)
   const recordingRef = useRef(false)
   recordingRef.current = recording
 
@@ -94,8 +95,8 @@ export default function App() {
       mediaStreamRef.current = stream
       if (videoRef.current) videoRef.current.srcObject = stream
       setStreamActive(true)
-    } catch {
-      setErrorMsg('Camera or microphone access denied.')
+    } catch (err) {
+      setErrorMsg(`Could not access camera/mic: ${err.message}`)
     }
   }
 
@@ -125,6 +126,7 @@ export default function App() {
     setErrorMsg(null)
     bestFrameBlobRef.current = null
     bestFrameScoreRef.current = 0
+    bestClientReadingRef.current = liveFaceReading
     captureFrameBlob().then((b) => { if (b && !bestFrameBlobRef.current) { bestFrameBlobRef.current = b; bestFrameScoreRef.current = 0.5 } })
     try {
       const rec = new MediaRecorder(new MediaStream([mediaStreamRef.current.getAudioTracks()[0]]), { mimeType: 'audio/webm' })
@@ -151,12 +153,22 @@ export default function App() {
       if (frame) fd.append('image', frame, 'frame.jpg')
       if (audioBlob) fd.append('audio', audioBlob, 'audio.webm')
       fd.append('mode', fusionMode); fd.append('generate_tts', 'true')
+      const activeFace = (bestClientReadingRef.current && bestClientReadingRef.current.emotion !== 'neutral')
+        ? bestClientReadingRef.current
+        : (liveFaceReading && liveFaceReading.emotion !== 'neutral')
+        ? liveFaceReading
+        : bestClientReadingRef.current || liveFaceReading
+      if (activeFace && activeFace.emotion) {
+        fd.append('face_hint', JSON.stringify(activeFace))
+      }
       const r = await fetch(`${API}/analyze`, { method: 'POST', body: fd })
       if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || `Error ${r.status}`) }
       const result = await r.json()
       setAnalysisResult(result)
       if (result.intermediate_results?.face?.all_scores) {
-        setLiveFaceReading({ emotion: result.intermediate_results.face.emotion, confidence: result.intermediate_results.face.confidence, all_scores: result.intermediate_results.face.all_scores })
+        if (result.intermediate_results.face.emotion !== 'neutral' || !liveFaceReading || liveFaceReading.emotion === 'neutral') {
+          setLiveFaceReading({ emotion: result.intermediate_results.face.emotion, confidence: result.intermediate_results.face.confidence, all_scores: result.intermediate_results.face.all_scores })
+        }
       }
       if (result.audio_base64 && audioPlayerRef.current) { audioPlayerRef.current.src = result.audio_base64; audioPlayerRef.current.play().catch(() => {}) }
     } catch (err) { setErrorMsg(`Analysis failed: ${err.message}`) } finally { setProcessing(false) }
@@ -240,6 +252,10 @@ export default function App() {
             if (clientReading) {
               setLiveFaceReading(clientReading)
               gotReading = true
+              if (recordingRef.current && clientReading.emotion && clientReading.emotion !== 'neutral') {
+                bestClientReadingRef.current = clientReading
+                captureFrameBlob().then((b) => { if (b) bestFrameBlobRef.current = b })
+              }
             }
           }
 
@@ -282,9 +298,31 @@ export default function App() {
 
   const EMOTIONS = ['happy', 'neutral', 'surprise', 'sad', 'fear', 'angry', 'disgust']
   const defaultScores = streamActive ? { neutral: 0.35, happy: 0.12, surprise: 0.10, sad: 0.11, fear: 0.11, angry: 0.11, disgust: 0.10 } : null
-  const scores = liveFaceReading?.all_scores || analysisResult?.intermediate_results?.face?.all_scores || analysisResult?.intermediate_results?.face?.probs || defaultScores
-  const topEmotion = liveFaceReading?.emotion || analysisResult?.intermediate_results?.face?.emotion || (streamActive ? 'neutral' : null)
-  const heroLabel = analysisResult?.primary_emotion || (streamActive && liveFaceReading?.emotion) || (streamActive ? 'Detecting...' : 'Standby')
+
+  // Ensure active non-neutral face scores are shown on spectrum
+  const scores = (liveFaceReading?.all_scores)
+    || (analysisResult?.intermediate_results?.face?.all_scores)
+    || (analysisResult?.intermediate_results?.face?.probs)
+    || defaultScores
+
+  const activeFaceEmotion = (liveFaceReading?.emotion && liveFaceReading.emotion !== 'neutral')
+    ? liveFaceReading.emotion
+    : (analysisResult?.intermediate_results?.face?.emotion && analysisResult.intermediate_results.face.emotion !== 'neutral')
+    ? analysisResult.intermediate_results.face.emotion
+    : (analysisResult?.intermediate_results?.face?.emotion || liveFaceReading?.emotion || (streamActive ? 'neutral' : null))
+
+  const activeFaceConfidence = (activeFaceEmotion === liveFaceReading?.emotion ? liveFaceReading?.confidence : null)
+    || analysisResult?.intermediate_results?.face?.confidence
+    || liveFaceReading?.confidence
+
+  const topEmotion = activeFaceEmotion
+
+  const heroLabel = (analysisResult?.primary_emotion && analysisResult.primary_emotion !== 'neutral')
+    ? analysisResult.primary_emotion
+    : (activeFaceEmotion && activeFaceEmotion !== 'neutral')
+    ? activeFaceEmotion
+    : (analysisResult?.primary_emotion || (streamActive ? 'Detecting...' : 'Standby'))
+
   const isLive = streamActive && !analysisResult && !!liveFaceReading
 
   const S = {
@@ -546,8 +584,8 @@ export default function App() {
             <div style={S.channelGrid}>
               <ChannelCard
                 label="Face · ViT"
-                emotion={analysisResult?.intermediate_results?.face?.emotion || liveFaceReading?.emotion}
-                confidence={analysisResult?.intermediate_results?.face?.confidence || liveFaceReading?.confidence}
+                emotion={activeFaceEmotion}
+                confidence={activeFaceConfidence}
                 note="No video frame"
                 live={!analysisResult && !!liveFaceReading}
               />

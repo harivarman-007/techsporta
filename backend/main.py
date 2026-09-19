@@ -315,8 +315,10 @@ async def analyze_endpoint(
     video: Optional[UploadFile] = File(None),
     mode: str = Form("fast"),
     generate_tts: bool = Form(True),
+    face_hint: Optional[str] = Form(None),
 ):
     try:
+        import json
         from pipeline import analyze_multimodal
         from denoise import denoise_wav_bytes
 
@@ -326,12 +328,20 @@ async def analyze_endpoint(
             aud_bytes = denoise_wav_bytes(aud_bytes)
         vid_bytes = (await video.read()) if video is not None else None
 
+        parsed_hint = None
+        if face_hint:
+            try:
+                parsed_hint = json.loads(face_hint)
+            except Exception:
+                pass
+
         return analyze_multimodal(
             image_bytes=img_bytes,
             audio_bytes=aud_bytes,
             video_bytes=vid_bytes,
             mode=mode,
             generate_tts=generate_tts,
+            face_hint=parsed_hint,
         )
     except Exception as exc:
         logger.exception("analyze error")
