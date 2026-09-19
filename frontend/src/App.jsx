@@ -206,29 +206,46 @@ export default function App() {
 
   useEffect(() => {
     if (!streamActive || processing || !showHUD) return
-    let active = true, busy = false
-    const poll = async () => {
-      if (busy || !videoRef.current || videoRef.current.readyState < 2) return
-      busy = true
-      try {
-        const v = videoRef.current, c = document.createElement('canvas')
-        c.width = Math.min(v.videoWidth || 640, 320); c.height = Math.min(v.videoHeight || 480, 240)
-        c.getContext('2d').drawImage(v, 0, 0, c.width, c.height)
-        const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.8))
-        if (!blob || !active) return
-        const fd = new FormData(); fd.append('image', blob, 'live.jpg')
-        const res = await fetch(`${API}/face-emotion`, { method: 'POST', body: fd })
-        if (res.ok && active) {
-          const data = await res.json(); setLiveFaceReading(data)
-          if (recordingRef.current && blob) {
-            const score = (data.confidence || 0) + (data.emotion?.toLowerCase() !== 'neutral' ? 1 : 0)
-            if (score > bestFrameScoreRef.current || !bestFrameBlobRef.current) { bestFrameBlobRef.current = blob; bestFrameScoreRef.current = score }
-          }
+    let active = true
+    const loop = async () => {
+      while (active) {
+        if (videoRef.current && videoRef.current.readyState >= 2 && !processing) {
+          try {
+            const v = videoRef.current
+            const c = document.createElement('canvas')
+            // ViT native dimension (224x224) centered square crop
+            const size = 224
+            c.width = size
+            c.height = size
+            const minDim = Math.min(v.videoWidth || 640, v.videoHeight || 480)
+            const sx = ((v.videoWidth || 640) - minDim) / 2
+            const sy = ((v.videoHeight || 480) - minDim) / 2
+            c.getContext('2d').drawImage(v, sx, sy, minDim, minDim, 0, 0, size, size)
+            const blob = await new Promise((res) => c.toBlob(res, 'image/jpeg', 0.65))
+            if (blob && active) {
+              const fd = new FormData()
+              fd.append('image', blob, 'live.jpg')
+              const res = await fetch(`${API}/face-emotion`, { method: 'POST', body: fd })
+              if (res.ok && active) {
+                const data = await res.json()
+                setLiveFaceReading(data)
+                if (recordingRef.current && blob) {
+                  const score = (data.confidence || 0) + (data.emotion?.toLowerCase() !== 'neutral' ? 1 : 0)
+                  if (score > bestFrameScoreRef.current || !bestFrameBlobRef.current) {
+                    bestFrameBlobRef.current = blob
+                    bestFrameScoreRef.current = score
+                  }
+                }
+              }
+            }
+          } catch { }
         }
-      } catch { } finally { busy = false }
+        // Small 150ms rest between frames — ensures zero request queuing and real-time responsiveness
+        await new Promise((r) => setTimeout(r, 150))
+      }
     }
-    const id = setInterval(poll, 600)
-    return () => { active = false; clearInterval(id) }
+    loop()
+    return () => { active = false }
   }, [streamActive, processing, showHUD])
 
   const EMOTIONS = ['happy', 'neutral', 'surprise', 'sad', 'fear', 'angry', 'disgust']

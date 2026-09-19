@@ -623,10 +623,11 @@ def predict_face_emotion(image_bytes: bytes, use_facs: Optional[bool] = None) ->
     else:
         face_rgb = rgb
 
-    # Run ViT on tight face crop
+    # Run ViT on tight face crop with zero-overhead inference mode
     pil_image = Image.fromarray(face_rgb)
     pipe = _get_face_emotion_pipeline()
-    raw_results = pipe(pil_image, top_k=None)
+    with torch.inference_mode():
+        raw_results = pipe(pil_image, top_k=None)
     vit_scores = vit_pipeline_output_to_scores(raw_results)
 
     # Optional extra: Process through Calibrated Emotion Recognizer (FACS + Calibration)
